@@ -93,6 +93,8 @@ export default function BookingManager() {
   const [showForm, setShowForm] = useState(false);
   const [form, setForm] = useState(initialForm);
   const [loading, setLoading] = useState(false);
+  const [syncLoading, setSyncLoading] = useState(false);
+  const [syncMessage, setSyncMessage] = useState<string | null>(null);
   const [filter, setFilter] = useState<FilterKey>("all");
 
   const totals = useMemo(() => {
@@ -182,6 +184,31 @@ export default function BookingManager() {
     await loadData();
   }
 
+  async function handleSync() {
+    setError(null);
+    setSyncMessage(null);
+    setSyncLoading(true);
+
+    try {
+      const response = await fetch("/api/admin/sync", {
+        method: "POST",
+      });
+
+      const result = await response.json();
+      setSyncLoading(false);
+
+      if (!response.ok) {
+        setError(result?.message || "Ошибка синхронизации");
+        return;
+      }
+
+      setSyncMessage(result?.message || "Синхронизация выполнена");
+    } catch (e) {
+      setSyncLoading(false);
+      setError(e instanceof Error ? e.message : "Ошибка синхронизации");
+    }
+  }
+
   return (
     <div style={{ maxWidth: 1100, margin: "0 auto", padding: 24, minHeight: "100%" }}>
       <header style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-start", gap: 24, marginBottom: 24 }}>
@@ -254,22 +281,26 @@ export default function BookingManager() {
           <div style={{ display: "flex", alignItems: "center", gap: 12, flexWrap: "wrap" }}>
             <button
               type="button"
-              disabled
+              onClick={handleSync}
+              disabled={syncLoading}
               style={{
                 padding: "10px 18px",
                 borderRadius: 10,
-                border: "1px solid #d1d5db",
-                background: "#f8fafc",
-                color: "#475569",
-                cursor: "not-allowed",
+                border: "1px solid #2563eb",
+                background: syncLoading ? "#93c5fd" : "#2563eb",
+                color: "white",
+                cursor: syncLoading ? "not-allowed" : "pointer",
               }}
             >
-              Синхронизировать с сайтом
+              {syncLoading ? "Синхронизация..." : "Синхронизировать с сайтом"}
             </button>
             <span style={{ color: "#6b7280", fontSize: 14 }}>
-              Будет подключено следующим этапом.
+              На сайт отправляются только даты и статус, без персональных данных.
             </span>
           </div>
+          {syncMessage ? (
+            <div style={{ marginTop: 12, color: "#166534", fontWeight: 600 }}>{syncMessage}</div>
+          ) : null}
         </div>
 
         <p style={{ marginTop: 16, color: "#475569" }}>
