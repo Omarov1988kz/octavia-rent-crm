@@ -39,6 +39,46 @@ export interface BookingInput {
   comment?: string;
 }
 
+export interface PublicCalendarBooking {
+  startDate: string;
+  endDate: string;
+  status: Exclude<BookingStatus, "cancelled">;
+}
+
+export interface SyncBookingInput {
+  externalId: string;
+  carKey?: string;
+  startDate: string;
+  endDate: string;
+  status: BookingStatus;
+}
+
+function validateDateRange(startDate: string, endDate: string) {
+  const startParts = startDate.split("-").map(Number);
+  const endParts = endDate.split("-").map(Number);
+
+  if (startParts.length !== 3 || endParts.length !== 3 || startParts.some(Number.isNaN) || endParts.some(Number.isNaN)) {
+    throw new Error("Неверный формат дат");
+  }
+
+  const [startYear, startMonth, startDay] = startParts;
+  const [endYear, endMonth, endDay] = endParts;
+
+  const startValue = startYear * 10000 + startMonth * 100 + startDay;
+  const endValue = endYear * 10000 + endMonth * 100 + endDay;
+
+  if (!(startValue < endValue)) {
+    throw new Error("Дата возврата должна быть позже даты начала");
+  }
+}
+
+function sanitizeStatus(value: unknown): BookingStatus {
+  if (value === "request" || value === "booked" || value === "cancelled") {
+    return value;
+  }
+  throw new Error("Неверный статус бронирования");
+}
+
 export async function listBookings() {
   const result = await query<BookingRow>(
     `SELECT b.id,
@@ -144,18 +184,18 @@ export async function confirmBooking(id: string) {
   return (result.rowCount ?? 0) > 0;
 }
 
-export async function getBookedDateRanges(carId?: string) {
+export async function getBookedDateRanges(carKey?: string) {
   const params: unknown[] = [];
   let filter = "";
 
-  if (carId) {
-    filter = "AND car_id = $1";
-    params.push(carId);
+  if (carKey) {
+    filter = "AND car_key = $1";
+    params.push(carKey);
   }
 
   const result = await query<{ start_date: string | Date; end_date: string | Date; status: BookingStatus }>(
     `SELECT start_date, end_date, status
-     FROM bookings
+     FROM public_calendar_entries
      WHERE status IN ('request', 'booked')
      ${filter}
      ORDER BY start_date`,
@@ -165,6 +205,43 @@ export async function getBookedDateRanges(carId?: string) {
   return result.rows.map((row) => ({
     startDate: formatPgDate(row.start_date),
     endDate: formatPgDate(row.end_date),
-    status: row.status,
+    status: row.status as Exclude<BookingStatus, "cancelled">,
   }));
+}
+
+export async function syncPublicBookings(bookings: SyncBookingInput[]) {
+  const validated = bookings.map((booking) => {
+    if (typeof booking.externalId !== "string" || !booking.externalId.trim()) {
+      throw new Error("externalId обязателен");
+    }
+
+    const carKey = typeof booking.carKey === "string" && booking.carKey.trim() ? booking.carKey : "octavia";
+    const status = sanitizeStatus(booking.status);
+    validateDateRange(booking.startDate, booking.endDate);
+
+    return {
+      externalId: booking.externalId,
+      carKey,
+      startDate: booking.startDate,
+      endDate: booking.endDate,
+      status,
+    };
+  });
+
+  for (const entry of validated) {
+    await query(
+      `INSERT INTO public_calendar_entries (external_id, car_key, start_date, end_date, status, source, synced_at, created_at, updated_at)
+       VALUES ($1, $2, $3, $4, $5, $6, now(), now(), now())
+       ON CONFLICT (external_id) DO UPDATE
+       SET car_key = EXCLUDED.car_key,
+           start_date = EXCLUDED.start_date,
+           end_date = EXCLUDED.end_date,
+           status = EXCLUDED.status,
+           synced_at = now(),
+           updated_at = now()`,
+      [entry.externalId, entry.carKey, entry.startDate, entry.endDate, entry.status, "local_crm"]
+    );
+  }
+
+  return validated.length;
 }
