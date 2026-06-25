@@ -11,13 +11,49 @@ CREATE TABLE IF NOT EXISTS cars (
   created_at timestamptz NOT NULL DEFAULT now()
 );
 
+ALTER TABLE IF EXISTS cars
+  ADD COLUMN IF NOT EXISTS brand text;
+ALTER TABLE IF EXISTS cars
+  ADD COLUMN IF NOT EXISTS model text;
+ALTER TABLE IF EXISTS cars
+  ADD COLUMN IF NOT EXISTS year integer;
+ALTER TABLE IF EXISTS cars
+  ADD COLUMN IF NOT EXISTS vin text;
+ALTER TABLE IF EXISTS cars
+  ADD COLUMN IF NOT EXISTS color text;
+ALTER TABLE IF EXISTS cars
+  ADD COLUMN IF NOT EXISTS body_type text;
+ALTER TABLE IF EXISTS cars
+  ADD COLUMN IF NOT EXISTS transmission text;
+ALTER TABLE IF EXISTS cars
+  ADD COLUMN IF NOT EXISTS engine text;
+ALTER TABLE IF EXISTS cars
+  ADD COLUMN IF NOT EXISTS fuel_type text;
+ALTER TABLE IF EXISTS cars
+  ADD COLUMN IF NOT EXISTS mileage integer;
+ALTER TABLE IF EXISTS cars
+  ADD COLUMN IF NOT EXISTS ownership_type text NOT NULL DEFAULT 'own';
+ALTER TABLE IF EXISTS cars
+  ADD COLUMN IF NOT EXISTS status text NOT NULL DEFAULT 'active';
+ALTER TABLE IF EXISTS cars
+  ADD COLUMN IF NOT EXISTS comment text;
+ALTER TABLE IF EXISTS cars
+  ADD COLUMN IF NOT EXISTS updated_at timestamptz NOT NULL DEFAULT now();
+
+UPDATE cars
+SET plate_number = NULL
+WHERE plate_number IS NOT NULL
+  AND TRIM(plate_number) = '';
+
 DELETE FROM cars a
 USING cars b
 WHERE a.ctid < b.ctid
-  AND a.plate_number IS NOT NULL
-  AND a.plate_number = b.plate_number;
+  AND NULLIF(TRIM(a.plate_number), '') IS NOT NULL
+  AND LOWER(TRIM(a.plate_number)) = LOWER(TRIM(b.plate_number));
 
 CREATE UNIQUE INDEX IF NOT EXISTS cars_plate_number_unique_idx ON cars(plate_number);
+CREATE INDEX IF NOT EXISTS cars_status_idx ON cars(status);
+CREATE INDEX IF NOT EXISTS cars_ownership_type_idx ON cars(ownership_type);
 
 CREATE TABLE IF NOT EXISTS bookings (
   id uuid PRIMARY KEY DEFAULT uuid_generate_v4(),

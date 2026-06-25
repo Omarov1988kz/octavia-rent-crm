@@ -1,4 +1,5 @@
 import { query } from "@/server/db";
+import { listActiveCars } from "@/server/services/cars";
 
 export type BookingStatus = "request" | "booked" | "cancelled";
 
@@ -19,6 +20,7 @@ export interface BookingRow {
   id: string;
   car_id: string;
   car_name: string | null;
+  car_plate_number: string | null;
   client_id: string | null;
   client_name: string;
   client_phone: string | null;
@@ -122,6 +124,7 @@ export async function listBookings() {
     `SELECT b.id,
             b.car_id,
             c.name AS car_name,
+            c.plate_number AS car_plate_number,
             b.client_id,
             b.client_name,
             b.client_phone,
@@ -146,30 +149,7 @@ export async function listBookings() {
   }));
 }
 
-export async function getActiveCars() {
-  const result = await query<{ id: string; name: string; plate_number: string | null }>(
-    `SELECT DISTINCT ON (
-       CASE
-         WHEN NULLIF(TRIM(plate_number), '') IS NOT NULL THEN LOWER(TRIM(plate_number))
-         ELSE LOWER(TRIM(name))
-       END
-     )
-       id,
-       name,
-       plate_number
-     FROM cars
-     WHERE is_active = true
-     ORDER BY
-       CASE
-         WHEN NULLIF(TRIM(plate_number), '') IS NOT NULL THEN LOWER(TRIM(plate_number))
-         ELSE LOWER(TRIM(name))
-       END,
-       name,
-       id`,
-    []
-  );
-  return result.rows;
-}
+export const getActiveCars = listActiveCars;
 
 export async function createBooking(input: BookingInput) {
   const {

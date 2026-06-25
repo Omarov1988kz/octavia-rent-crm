@@ -8,6 +8,7 @@ type BookingStatus = "request" | "booked" | "cancelled";
 type Booking = {
   id: string;
   car_name: string | null;
+  car_plate_number: string | null;
   client_id: string | null;
   client_name: string;
   client_phone: string | null;
@@ -21,7 +22,14 @@ type Booking = {
 
 type FilterKey = "all" | BookingStatus;
 
-type CarOption = { id: string; name: string; plate_number?: string | null };
+type CarOption = {
+  id: string;
+  name: string;
+  plate_number?: string | null;
+  brand?: string | null;
+  model?: string | null;
+  year?: number | null;
+};
 
 type ClientSearchResult = {
   id: string;
@@ -124,7 +132,8 @@ function fullClientName(client: ClientSearchResult) {
 }
 
 function carLabel(car: CarOption) {
-  return car.plate_number?.trim() ? `${car.name} · ${car.plate_number}` : car.name;
+  const title = car.brand || car.model || car.year ? `${car.brand ?? ""} ${car.model ?? ""} ${car.year ?? ""}`.trim() : car.name;
+  return car.plate_number?.trim() ? `${title} · ${car.plate_number}` : title;
 }
 
 function dedupeCars(cars: CarOption[]) {
@@ -202,7 +211,7 @@ export default function BookingManager() {
         setBookings(bookingsJson?.bookings || []);
       }
 
-      const carsResponse = await fetch("/api/admin/cars");
+      const carsResponse = await fetch("/api/admin/cars?activeOnly=true");
       const carsJson = await parseJson(carsResponse);
       if (!carsResponse.ok) {
         setError(carsJson?.message || "Ошибка загрузки автомобилей");
@@ -620,7 +629,10 @@ export default function BookingManager() {
                 <div className="admin-list-card-header">
                   <div>
                     <div className="admin-row">
-                      <div className="admin-list-title">{booking.car_name || "Автомобиль"}</div>
+                      <div className="admin-list-title">
+                        {booking.car_name || "Автомобиль"}
+                        {booking.car_plate_number ? <span className="admin-muted"> · {booking.car_plate_number}</span> : null}
+                      </div>
                       <span className={`admin-badge ${booking.status}`}>{statusLabel(booking.status)}</span>
                     </div>
                     <div className="admin-muted" style={{ marginTop: 6 }}>
