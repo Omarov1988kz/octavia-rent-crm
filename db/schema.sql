@@ -11,6 +11,8 @@ CREATE TABLE IF NOT EXISTS cars (
   created_at timestamptz NOT NULL DEFAULT now()
 );
 
+CREATE UNIQUE INDEX IF NOT EXISTS cars_plate_number_unique_idx ON cars(plate_number);
+
 CREATE TABLE IF NOT EXISTS bookings (
   id uuid PRIMARY KEY DEFAULT uuid_generate_v4(),
   car_id uuid NOT NULL REFERENCES cars(id),
@@ -49,4 +51,6 @@ CREATE INDEX IF NOT EXISTS public_calendar_entries_status_idx ON public_calendar
 CREATE UNIQUE INDEX IF NOT EXISTS public_calendar_entries_external_id_idx ON public_calendar_entries(external_id);
 
 -- Пример данных
-INSERT INTO cars (name, plate_number) VALUES ('Skoda Octavia', 'A123BC');
+INSERT INTO cars (name, plate_number)
+VALUES ('Skoda Octavia', 'A123BC')
+ON CONFLICT (plate_number) DO NOTHING;
