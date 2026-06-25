@@ -11,6 +11,12 @@ CREATE TABLE IF NOT EXISTS cars (
   created_at timestamptz NOT NULL DEFAULT now()
 );
 
+DELETE FROM cars a
+USING cars b
+WHERE a.ctid < b.ctid
+  AND a.plate_number IS NOT NULL
+  AND a.plate_number = b.plate_number;
+
 CREATE UNIQUE INDEX IF NOT EXISTS cars_plate_number_unique_idx ON cars(plate_number);
 
 CREATE TABLE IF NOT EXISTS bookings (
@@ -161,6 +167,9 @@ ALTER TABLE IF EXISTS clients
   ADD COLUMN IF NOT EXISTS created_at timestamptz NOT NULL DEFAULT now();
 ALTER TABLE IF EXISTS clients
   ADD COLUMN IF NOT EXISTS updated_at timestamptz NOT NULL DEFAULT now();
+
+ALTER TABLE IF EXISTS bookings
+  ADD COLUMN IF NOT EXISTS client_id uuid REFERENCES clients(id) ON DELETE SET NULL;
 
 CREATE INDEX IF NOT EXISTS clients_last_name_idx ON clients(last_name);
 CREATE INDEX IF NOT EXISTS clients_phone_idx ON clients(phone);

@@ -1,91 +1,120 @@
 import Link from "next/link";
-import { notFound } from "next/navigation";
-
-async function getClient(id: string) {
-  const response = await fetch(`/api/admin/clients/${id}`, {
-    cache: "no-store",
-  });
-  if (!response.ok) {
-    return null;
-  }
-  const data = await response.json();
-  return data.client;
-}
+import { getClient } from "@/server/services/clients";
 
 export default async function ClientPage({ params }: { params: { id: string } }) {
   const client = await getClient(params.id);
   if (!client) {
-    notFound();
+    return (
+      <main style={{ padding: 24, fontFamily: "system-ui, sans-serif" }}>
+        <div style={{ maxWidth: 900, margin: "0 auto", padding: 24, background: "white", borderRadius: 18, boxShadow: "0 1px 4px rgba(15,23,42,0.08)" }}>
+          <h1 style={{ margin: 0, fontSize: 32 }}>Клиент не найден</h1>
+          <p style={{ marginTop: 16, color: "#475569" }}>Пожалуйста, проверьте URL или вернитесь к списку клиентов.</p>
+          <Link
+            href="/admin/clients"
+            style={{ display: "inline-block", marginTop: 16, padding: "10px 14px", borderRadius: 10, border: "1px solid #d1d5db", background: "white", color: "#0f172a", textDecoration: "none", cursor: "pointer" }}
+          >
+            Назад к списку
+          </Link>
+        </div>
+      </main>
+    );
   }
 
   return (
     <main style={{ padding: 24, fontFamily: "system-ui, sans-serif" }}>
       <div style={{ maxWidth: 900, margin: "0 auto", padding: 24, background: "white", borderRadius: 18, boxShadow: "0 1px 4px rgba(15,23,42,0.08)" }}>
-        <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", gap: 16, flexWrap: "wrap" }}>
-          <div>
-            <h1 style={{ margin: 0, fontSize: 32 }}>{`${client.last_name} ${client.first_name} ${client.middle_name ?? ""}`.trim()}</h1>
-            <div style={{ marginTop: 8, color: "#475569" }}>{`Статус: ${client.client_status}`}</div>
-          </div>
-          <div style={{ display: "flex", gap: 8, flexWrap: "wrap" }}>
+        <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", gap: 16, flexWrap: "wrap", marginBottom: 24 }}>
+          <div style={{ display: "flex", alignItems: "center", gap: 16, flexWrap: "wrap" }}>
             <Link
               href="/admin/clients"
-              style={{ padding: "10px 14px", borderRadius: 10, border: "none", background: "#10b981", color: "white", textDecoration: "none", cursor: "pointer" }}
+              style={{ color: "#2563eb", textDecoration: "none", fontSize: 14 }}
             >
-              Редактировать
+              ← К списку клиентов
             </Link>
             <Link
-              href="/admin/clients"
-              style={{ padding: "10px 14px", borderRadius: 10, border: "1px solid #d1d5db", background: "white", color: "#0f172a", textDecoration: "none", cursor: "pointer" }}
+              href="/admin/bookings"
+              style={{ color: "#475569", textDecoration: "none", fontSize: 14 }}
             >
-              Назад к списку
+              Бронирования
             </Link>
           </div>
         </div>
 
-        <section style={{ marginTop: 24, display: "grid", gap: 18 }}>
-          <div style={{ display: "grid", gap: 10 }}>
-            <div style={{ fontWeight: 600, color: "#0f172a" }}>Контакты</div>
+        <div style={{ display: "flex", justifyContent: "space-between", flexWrap: "wrap", gap: 16, marginBottom: 24 }}>
+          <div>
+            <h1 style={{ margin: 0, fontSize: 32 }}>{`${client.last_name} ${client.first_name} ${client.middle_name ?? ""}`.trim()}</h1>
+            <p style={{ margin: "10px 0 0", color: "#475569" }}>Локальная карточка клиента CRM.</p>
+          </div>
+          <div style={{ display: "flex", gap: 8, flexWrap: "wrap" }}>
+            <Link
+              href="/admin/clients"
+              style={{ padding: "10px 14px", borderRadius: 10, border: "1px solid #d1d5db", background: "white", color: "#0f172a", textDecoration: "none", cursor: "pointer" }}
+            >
+              К списку клиентов
+            </Link>
+            <Link
+              href="/admin/bookings"
+              style={{ padding: "10px 14px", borderRadius: 10, border: "1px solid #d1d5db", background: "white", color: "#0f172a", textDecoration: "none", cursor: "pointer" }}
+            >
+              Бронирования
+            </Link>
+          </div>
+        </div>
+
+        <div style={{ display: "grid", gap: 18 }}>
+          <section style={{ display: "grid", gap: 10 }}>
+            <div style={{ fontWeight: 600, color: "#0f172a", fontSize: 18 }}>Основное</div>
+            <div>ФИО: {`${client.last_name} ${client.first_name} ${client.middle_name ?? ""}`.trim()}</div>
+            <div>Статус: {client.client_status}</div>
+            <div>Дата регистрации: {formatDate(client.client_registration_date)}</div>
+          </section>
+
+          <section style={{ display: "grid", gap: 10 }}>
+            <div style={{ fontWeight: 600, color: "#0f172a", fontSize: 18 }}>Контакты</div>
             <div>Телефон: {client.phone || "—"}</div>
             <div>Email: {client.email || "—"}</div>
             <div>Соцсети: {client.social_links || "—"}</div>
             <div>Источник: {client.acquisition_source || "—"}</div>
-          </div>
+          </section>
 
-          <div style={{ display: "grid", gap: 10 }}>
-            <div style={{ fontWeight: 600, color: "#0f172a" }}>Документ</div>
+          <section style={{ display: "grid", gap: 10 }}>
+            <div style={{ fontWeight: 600, color: "#0f172a", fontSize: 18 }}>Документ</div>
             <div>Тип: {client.document_type || "—"}</div>
             <div>Серия и номер: {client.document_series_number || "—"}</div>
             <div>Кем выдан: {client.document_issued_by || "—"}</div>
             <div>Дата выдачи: {formatDate(client.document_issued_date)}</div>
             <div>Дата окончания: {formatDate(client.document_expiry_date)}</div>
-          </div>
+          </section>
 
-          <div style={{ display: "grid", gap: 10 }}>
-            <div style={{ fontWeight: 600, color: "#0f172a" }}>Водительское удостоверение</div>
+          <section style={{ display: "grid", gap: 10 }}>
+            <div style={{ fontWeight: 600, color: "#0f172a", fontSize: 18 }}>Водительское удостоверение</div>
             <div>Номер ВУ: {client.driver_license_number || "—"}</div>
             <div>Дата выдачи: {formatDate(client.driver_license_issued_date)}</div>
             <div>Дата окончания: {formatDate(client.driver_license_expiry_date)}</div>
             <div>Категории: {client.driver_license_categories || "—"}</div>
             <div>Страна: {client.driver_license_country || "—"}</div>
             <div>КБМ: {client.kbm || "—"}</div>
-          </div>
+          </section>
 
-          <div style={{ display: "grid", gap: 10 }}>
-            <div style={{ fontWeight: 600, color: "#0f172a" }}>Адреса</div>
+          <section style={{ display: "grid", gap: 10 }}>
+            <div style={{ fontWeight: 600, color: "#0f172a", fontSize: 18 }}>Адреса</div>
             <div>Проживание: {client.residential_address || "—"}</div>
             <div>Регистрация: {client.registration_address || "—"}</div>
-          </div>
+          </section>
 
-          <div style={{ display: "grid", gap: 10 }}>
-            <div style={{ fontWeight: 600, color: "#0f172a" }}>Дополнительно</div>
-            <div>Дата регистрации: {formatDate(client.client_registration_date)}</div>
+          <section style={{ display: "grid", gap: 10 }}>
+            <div style={{ fontWeight: 600, color: "#0f172a", fontSize: 18 }}>Дополнительно</div>
             <div>Дата рождения: {formatDate(client.birth_date)}</div>
             <div>ИНН: {client.inn || "—"}</div>
             <div>Предпочтения: {client.preferences || "—"}</div>
             <div>Комментарий: {client.comments || "—"}</div>
-            <div>Чёрный список: {client.is_blacklisted ? `Да (${client.blacklist_reason || "Причина не указана"})` : "Нет"}</div>
-          </div>
-        </section>
+          </section>
+
+          <section style={{ display: "grid", gap: 10 }}>
+            <div style={{ fontWeight: 600, color: "#0f172a", fontSize: 18 }}>Чёрный список</div>
+            <div>{client.is_blacklisted ? `Да (${client.blacklist_reason || "Причина не указана"})` : "Нет"}</div>
+          </section>
+        </div>
       </div>
     </main>
   );

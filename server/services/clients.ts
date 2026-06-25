@@ -100,6 +100,16 @@ function validateClientInput(input: ClientInput) {
   }
 }
 
+function normalizeOptionalString(value?: string | null) {
+  const normalized = value?.trim() ?? "";
+  return normalized.length > 0 ? normalized : null;
+}
+
+function normalizeOptionalDate(value?: string | null) {
+  const normalized = value?.trim() ?? "";
+  return normalized.length > 0 ? normalized : null;
+}
+
 export async function listClients(params: ListClientsParams = {}) {
   const conditions: string[] = [];
   const values: unknown[] = [];
@@ -178,38 +188,38 @@ export async function createClient(input: ClientInput) {
     ) VALUES (
       $1, $2, $3, $4, $5, $6, $7, $8, $9, $10,
       $11, $12, $13, $14, $15, $16, $17, $18, $19, $20,
-      $21, $22, $23, $24, $25, $26, $27, $28, $29, $30
+      $21, $22, $23, $24, $25, $26, $27, $28, $29
     ) RETURNING *`,
     [
       input.last_name.trim(),
       input.first_name.trim(),
-      input.middle_name?.trim() ?? null,
-      input.birth_date ?? null,
+      normalizeOptionalString(input.middle_name),
+      normalizeOptionalDate(input.birth_date),
       gender,
-      input.phone?.trim() ?? null,
-      input.email?.trim() ?? null,
-      input.residential_address?.trim() ?? null,
-      input.registration_address?.trim() ?? null,
-      input.document_type?.trim() ?? null,
-      input.document_series_number?.trim() ?? null,
-      input.document_issued_by?.trim() ?? null,
-      input.document_issued_date ?? null,
-      input.document_expiry_date ?? null,
-      input.driver_license_number?.trim() ?? null,
-      input.driver_license_issued_date ?? null,
-      input.driver_license_expiry_date ?? null,
-      input.driver_license_categories?.trim() ?? null,
-      input.driver_license_country?.trim() ?? null,
-      input.kbm?.trim() ?? null,
-      input.inn?.trim() ?? null,
-      input.client_registration_date ?? null,
+      normalizeOptionalString(input.phone),
+      normalizeOptionalString(input.email),
+      normalizeOptionalString(input.residential_address),
+      normalizeOptionalString(input.registration_address),
+      normalizeOptionalString(input.document_type),
+      normalizeOptionalString(input.document_series_number),
+      normalizeOptionalString(input.document_issued_by),
+      normalizeOptionalDate(input.document_issued_date),
+      normalizeOptionalDate(input.document_expiry_date),
+      normalizeOptionalString(input.driver_license_number),
+      normalizeOptionalDate(input.driver_license_issued_date),
+      normalizeOptionalDate(input.driver_license_expiry_date),
+      normalizeOptionalString(input.driver_license_categories),
+      normalizeOptionalString(input.driver_license_country),
+      normalizeOptionalString(input.kbm),
+      normalizeOptionalString(input.inn),
+      normalizeOptionalDate(input.client_registration_date),
       clientStatus,
-      input.preferences?.trim() ?? null,
-      input.comments?.trim() ?? null,
-      input.social_links?.trim() ?? null,
-      input.acquisition_source?.trim() ?? null,
+      normalizeOptionalString(input.preferences),
+      normalizeOptionalString(input.comments),
+      normalizeOptionalString(input.social_links),
+      normalizeOptionalString(input.acquisition_source),
       isBlacklisted,
-      input.blacklist_reason?.trim() ?? null,
+      normalizeOptionalString(input.blacklist_reason),
     ]
   );
 
@@ -260,33 +270,33 @@ export async function updateClient(id: string, input: ClientInput) {
     [
       input.last_name.trim(),
       input.first_name.trim(),
-      input.middle_name?.trim() ?? null,
-      input.birth_date ?? null,
+      normalizeOptionalString(input.middle_name),
+      normalizeOptionalDate(input.birth_date),
       gender,
-      input.phone?.trim() ?? null,
-      input.email?.trim() ?? null,
-      input.residential_address?.trim() ?? null,
-      input.registration_address?.trim() ?? null,
-      input.document_type?.trim() ?? null,
-      input.document_series_number?.trim() ?? null,
-      input.document_issued_by?.trim() ?? null,
-      input.document_issued_date ?? null,
-      input.document_expiry_date ?? null,
-      input.driver_license_number?.trim() ?? null,
-      input.driver_license_issued_date ?? null,
-      input.driver_license_expiry_date ?? null,
-      input.driver_license_categories?.trim() ?? null,
-      input.driver_license_country?.trim() ?? null,
-      input.kbm?.trim() ?? null,
-      input.inn?.trim() ?? null,
-      input.client_registration_date ?? null,
+      normalizeOptionalString(input.phone),
+      normalizeOptionalString(input.email),
+      normalizeOptionalString(input.residential_address),
+      normalizeOptionalString(input.registration_address),
+      normalizeOptionalString(input.document_type),
+      normalizeOptionalString(input.document_series_number),
+      normalizeOptionalString(input.document_issued_by),
+      normalizeOptionalDate(input.document_issued_date),
+      normalizeOptionalDate(input.document_expiry_date),
+      normalizeOptionalString(input.driver_license_number),
+      normalizeOptionalDate(input.driver_license_issued_date),
+      normalizeOptionalDate(input.driver_license_expiry_date),
+      normalizeOptionalString(input.driver_license_categories),
+      normalizeOptionalString(input.driver_license_country),
+      normalizeOptionalString(input.kbm),
+      normalizeOptionalString(input.inn),
+      normalizeOptionalDate(input.client_registration_date),
       clientStatus,
-      input.preferences?.trim() ?? null,
-      input.comments?.trim() ?? null,
-      input.social_links?.trim() ?? null,
-      input.acquisition_source?.trim() ?? null,
+      normalizeOptionalString(input.preferences),
+      normalizeOptionalString(input.comments),
+      normalizeOptionalString(input.social_links),
+      normalizeOptionalString(input.acquisition_source),
       isBlacklisted,
-      input.blacklist_reason?.trim() ?? null,
+      normalizeOptionalString(input.blacklist_reason),
       id,
     ]
   );

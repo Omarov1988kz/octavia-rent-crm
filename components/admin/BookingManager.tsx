@@ -1,5 +1,6 @@
 "use client";
 
+import Link from "next/link";
 import { useEffect, useMemo, useState, type FormEvent } from "react";
 
 type BookingStatus = "request" | "booked" | "cancelled";
@@ -7,6 +8,7 @@ type BookingStatus = "request" | "booked" | "cancelled";
 type Booking = {
   id: string;
   car_name: string | null;
+  client_id: string | null;
   client_name: string;
   client_phone: string | null;
   start_date: string;
@@ -19,25 +21,47 @@ type Booking = {
 
 type FilterKey = "all" | BookingStatus;
 
-type CarOption = { id: string; name: string };
+type CarOption = { id: string; name: string; plate_number?: string | null };
 
-const initialForm = {
+type ClientSearchResult = {
+  id: string;
+  last_name: string;
+  first_name: string;
+  middle_name?: string | null;
+  phone?: string | null;
+  client_status: string;
+  is_blacklisted: boolean;
+};
+
+type BookingForm = {
+  carId: string;
+  clientId: string;
+  clientName: string;
+  clientPhone: string;
+  startDate: string;
+  startTime: string;
+  endDate: string;
+  endTime: string;
+  status: BookingStatus;
+  comment: string;
+};
+
+const initialForm: BookingForm = {
   carId: "",
+  clientId: "",
   clientName: "",
   clientPhone: "",
   startDate: "",
   startTime: "12:00",
   endDate: "",
-  endTime: "13:00",
-  status: "request" as BookingStatus,
+  endTime: "12:00",
+  status: "request",
   comment: "",
 };
 
 function formatDate(value: string) {
   const [year, month, day] = value.split("-");
-  if (!year || !month || !day) {
-    return value;
-  }
+  if (!year || !month || !day) return value;
   return `${day}.${month}.${year}`;
 }
 
@@ -49,12 +73,20 @@ function formatDateTime(date: string, time?: string) {
   return `${formatDate(date)} ${formatTime(time)}`;
 }
 
+async function parseJson(response: Response) {
+  try {
+    return await response.json();
+  } catch {
+    return null;
+  }
+}
+
 function statusLabel(status: BookingStatus) {
   switch (status) {
     case "request":
       return "Заявка";
     case "booked":
-      return "Занято / бронь";
+      return "Бронь";
     case "cancelled":
       return "Отменено";
     default:
@@ -62,47 +94,49 @@ function statusLabel(status: BookingStatus) {
   }
 }
 
-function statusBadge(status: BookingStatus) {
-  const base = {
-    padding: "4px 10px",
-    borderRadius: 9999,
-    fontSize: 12,
-    fontWeight: 600,
-    display: "inline-flex",
-    alignItems: "center",
-  } as const;
-
-  if (status === "request") {
-    return { ...base, background: "#fef3c7", color: "#92400e" };
+function clientStatusLabel(status: string) {
+  switch (status) {
+    case "new":
+      return "Новый";
+    case "checked":
+      return "Проверен";
+    case "active":
+      return "Активный";
+    case "problem":
+      return "Проблемный";
+    case "archived":
+      return "Архивный";
+    default:
+      return status;
   }
-
-  if (status === "booked") {
-    return { ...base, background: "#fee2e2", color: "#991b1b" };
-  }
-
-  return { ...base, background: "#e5e7eb", color: "#374151" };
 }
 
 function isValidDate(startDate: string, endDate: string, startTime: string, endTime: string) {
-  if (!startDate || !endDate || !startTime || !endTime) {
-    return false;
-  }
+  if (!startDate || !endDate || !startTime || !endTime) return false;
 
-  const [sy, sm, sd] = startDate.split("-").map(Number);
-  const [ey, em, ed] = endDate.split("-").map(Number);
-  const [sh, smi] = startTime.split(":").map(Number);
-  const [eh, emi] = endTime.split(":").map(Number);
+  const start = new Date(`${startDate}T${startTime}:00`);
+  const end = new Date(`${endDate}T${endTime}:00`);
+  return !Number.isNaN(start.getTime()) && !Number.isNaN(end.getTime()) && end > start;
+}
 
-  if ([sy, sm, sd, ey, em, ed, sh, smi, eh, emi].some((value) => Number.isNaN(value))) {
-    return false;
-  }
+function fullClientName(client: ClientSearchResult) {
+  return `${client.last_name} ${client.first_name}${client.middle_name ? ` ${client.middle_name}` : ""}`.trim();
+}
 
-  const startValue = sy * 10000 + sm * 100 + sd;
-  const endValue = ey * 10000 + em * 100 + ed;
-  const startMinutes = sh * 60 + smi;
-  const endMinutes = eh * 60 + emi;
+function carLabel(car: CarOption) {
+  return car.plate_number?.trim() ? `${car.name} · ${car.plate_number}` : car.name;
+}
 
-  return startValue < endValue || (startValue === endValue && startMinutes < endMinutes);
+function dedupeCars(cars: CarOption[]) {
+  const seen = new Set<string>();
+  return cars.filter((car) => {
+    const key = car.plate_number?.trim()
+      ? `plate:${car.plate_number.trim().toLowerCase()}`
+      : `name:${car.name.trim().toLowerCase()}`;
+    if (seen.has(key)) return false;
+    seen.add(key);
+    return true;
+  });
 }
 
 export default function BookingManager() {
@@ -112,11 +146,17 @@ export default function BookingManager() {
   const [dateError, setDateError] = useState<string | null>(null);
   const [successMessage, setSuccessMessage] = useState<string | null>(null);
   const [showForm, setShowForm] = useState(false);
-  const [form, setForm] = useState(initialForm);
+  const [form, setForm] = useState<BookingForm>(initialForm);
+  const [clientSearch, setClientSearch] = useState("");
+  const [clientOptions, setClientOptions] = useState<ClientSearchResult[]>([]);
+  const [selectedClient, setSelectedClient] = useState<ClientSearchResult | null>(null);
+  const [clientWarning, setClientWarning] = useState<string | null>(null);
   const [loading, setLoading] = useState(false);
   const [syncLoading, setSyncLoading] = useState(false);
   const [syncMessage, setSyncMessage] = useState<string | null>(null);
   const [filter, setFilter] = useState<FilterKey>("all");
+
+  const uniqueCars = useMemo(() => dedupeCars(cars), [cars]);
 
   const totals = useMemo(() => {
     const summary = { all: 0, request: 0, booked: 0, cancelled: 0 };
@@ -128,9 +168,7 @@ export default function BookingManager() {
   }, [bookings]);
 
   const filteredBookings = useMemo(() => {
-    if (filter === "all") {
-      return bookings;
-    }
+    if (filter === "all") return bookings;
     return bookings.filter((booking) => booking.status === filter);
   }, [bookings, filter]);
 
@@ -153,60 +191,135 @@ export default function BookingManager() {
   }, []);
 
   async function loadData() {
-    const bookingsResponse = await fetch("/api/admin/bookings");
-    const bookingsJson = await bookingsResponse.json();
-    setBookings(bookingsJson.bookings || []);
+    setError(null);
+    try {
+      const bookingsResponse = await fetch("/api/admin/bookings");
+      const bookingsJson = await parseJson(bookingsResponse);
+      if (!bookingsResponse.ok) {
+        setError(bookingsJson?.message || "Ошибка загрузки бронирований");
+        setBookings([]);
+      } else {
+        setBookings(bookingsJson?.bookings || []);
+      }
 
-    const carsResponse = await fetch("/api/admin/cars");
-    const carsJson = await carsResponse.json();
-    setCars(carsJson.cars || []);
+      const carsResponse = await fetch("/api/admin/cars");
+      const carsJson = await parseJson(carsResponse);
+      if (!carsResponse.ok) {
+        setError(carsJson?.message || "Ошибка загрузки автомобилей");
+        setCars([]);
+      } else {
+        setCars(carsJson?.cars || []);
+      }
+    } catch (loadError) {
+      setError(loadError instanceof Error ? loadError.message : "Ошибка сети при загрузке данных");
+      setBookings([]);
+      setCars([]);
+    }
+  }
+
+  async function loadClientOptions(query: string) {
+    const search = query.trim();
+    if (search.length < 2) {
+      setClientOptions([]);
+      return;
+    }
+
+    try {
+      const url = new URL("/api/admin/clients", window.location.origin);
+      url.searchParams.set("search", search);
+
+      const response = await fetch(url.toString());
+      const result = await parseJson(response);
+      if (!response.ok) {
+        setClientOptions([]);
+        return;
+      }
+
+      setClientOptions((result?.clients || []).slice(0, 8));
+    } catch {
+      setClientOptions([]);
+    }
   }
 
   async function handleConfirm(id: string) {
-    const response = await fetch(`/api/admin/bookings/${id}/confirm`, {
-      method: "POST",
-    });
-
-    if (response.ok) {
+    setError(null);
+    try {
+      const response = await fetch(`/api/admin/bookings/${id}/confirm`, { method: "POST" });
+      const result = await parseJson(response);
+      if (!response.ok) {
+        setError(result?.message || "Ошибка подтверждения брони");
+        return;
+      }
       await loadData();
+    } catch (confirmError) {
+      setError(confirmError instanceof Error ? confirmError.message : "Ошибка подтверждения брони");
     }
   }
 
   async function handleCancel(id: string) {
-    const response = await fetch(`/api/admin/bookings/${id}/cancel`, {
-      method: "POST",
-    });
-
-    if (response.ok) {
+    setError(null);
+    try {
+      const response = await fetch(`/api/admin/bookings/${id}/cancel`, { method: "POST" });
+      const result = await parseJson(response);
+      if (!response.ok) {
+        setError(result?.message || "Ошибка отмены брони");
+        return;
+      }
       await loadData();
+    } catch (cancelError) {
+      setError(cancelError instanceof Error ? cancelError.message : "Ошибка отмены брони");
     }
   }
 
   async function handleDelete(id: string) {
     const confirmed = window.confirm("Удалить бронь навсегда? Это действие нельзя отменить.");
-    if (!confirmed) {
-      return;
+    if (!confirmed) return;
+
+    setError(null);
+    try {
+      const response = await fetch(`/api/admin/bookings/${id}`, { method: "DELETE" });
+      const result = await parseJson(response);
+      if (!response.ok) {
+        setError(result?.message || "Ошибка при удалении брони");
+        return;
+      }
+
+      setSuccessMessage("Бронь удалена");
+      await loadData();
+    } catch (deleteError) {
+      setError(deleteError instanceof Error ? deleteError.message : "Ошибка при удалении брони");
     }
-
-    const response = await fetch(`/api/admin/bookings/${id}`, {
-      method: "DELETE",
-    });
-
-    if (!response.ok) {
-      const result = await response.json();
-      setError(result?.message || "Ошибка при удалении брони");
-      return;
-    }
-
-    setSuccessMessage("Бронь удалена");
-    await loadData();
   }
 
   function resetForm() {
     setForm(initialForm);
+    setClientSearch("");
+    setSelectedClient(null);
+    setClientOptions([]);
+    setClientWarning(null);
     setError(null);
     setDateError(null);
     setSuccessMessage(null);
+  }
+
+  function selectClient(client: ClientSearchResult) {
+    const name = fullClientName(client);
+    setSelectedClient(client);
+    setClientSearch("");
+    setClientOptions([]);
+    setClientWarning(client.is_blacklisted ? "Клиент в чёрном списке" : null);
+    setForm({
+      ...form,
+      clientId: client.id,
+      clientName: name,
+      clientPhone: client.phone ?? "",
+    });
+  }
+
+  function clearSelectedClient() {
+    setSelectedClient(null);
+    setClientWarning(null);
+    setForm({ ...form, clientId: "", clientName: "", clientPhone: "" });
   }
 
   async function handleSubmit(event: FormEvent<HTMLFormElement>) {
@@ -215,32 +328,50 @@ export default function BookingManager() {
     setSuccessMessage(null);
     setDateError(null);
 
-    if (!form.startDate || !form.endDate || !form.startTime || !form.endTime || !isValidDate(form.startDate, form.endDate, form.startTime, form.endTime)) {
-      setDateError("Дата и время окончания должны быть позже начала");
+    if (!isValidDate(form.startDate, form.endDate, form.startTime, form.endTime)) {
+      setDateError("Дата и время возврата должны быть позже даты и времени начала");
       return;
     }
 
     setLoading(true);
+    try {
+      const response = await fetch("/api/admin/bookings", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          carId: form.carId,
+          clientId: form.clientId || undefined,
+          clientName: form.clientName,
+          clientPhone: form.clientPhone,
+          startDate: form.startDate,
+          startTime: form.startTime,
+          endDate: form.endDate,
+          endTime: form.endTime,
+          status: form.status,
+          comment: form.comment,
+        }),
+      });
 
-    const response = await fetch("/api/admin/bookings", {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify(form),
-    });
+      const result = await parseJson(response);
+      if (!response.ok) {
+        const message = result?.message || "Ошибка при создании брони";
+        setError(
+          message.includes("уже есть бронь")
+            ? `Машина занята с ${formatDateTime(form.startDate, form.startTime)} до ${formatDateTime(form.endDate, form.endTime)}`
+            : message
+        );
+        return;
+      }
 
-    const result = await response.json();
-    setLoading(false);
-
-    if (!response.ok) {
-      const message = result?.message || "Ошибка при создании брони";
-      setError(message === "На эти даты уже есть бронь" ? "На эти даты уже есть бронь или заявка" : message);
-      return;
+      resetForm();
+      setShowForm(false);
+      setSuccessMessage("Бронь добавлена");
+      await loadData();
+    } catch (submitError) {
+      setError(submitError instanceof Error ? submitError.message : "Ошибка при создании брони");
+    } finally {
+      setLoading(false);
     }
-
-    setForm(initialForm);
-    setShowForm(false);
-    setSuccessMessage("Бронь добавлена");
-    await loadData();
   }
 
   async function handleSync() {
@@ -249,296 +380,229 @@ export default function BookingManager() {
     setSyncLoading(true);
 
     try {
-      const response = await fetch("/api/admin/sync", {
-        method: "POST",
-      });
-
-      const result = await response.json();
-      setSyncLoading(false);
-
+      const response = await fetch("/api/admin/sync", { method: "POST" });
+      const result = await parseJson(response);
       if (!response.ok) {
         setError(result?.message || "Ошибка синхронизации");
         return;
       }
 
       setSyncMessage(result?.message || "Синхронизация выполнена");
-    } catch (e) {
+    } catch (syncError) {
+      setError(syncError instanceof Error ? syncError.message : "Ошибка синхронизации");
+    } finally {
       setSyncLoading(false);
-      setError(e instanceof Error ? e.message : "Ошибка синхронизации");
     }
   }
 
   return (
-    <div style={{ maxWidth: 1100, margin: "0 auto", padding: 24, minHeight: "100%" }}>
-      <header style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-start", gap: 24, marginBottom: 24 }}>
-        <div style={{ flex: 1, minWidth: 0 }}>
-          <h1 style={{ margin: 0, fontSize: 32 }}>Бронирования</h1>
-          <p style={{ margin: "10px 0 0", color: "#475569" }}>
-            Работайте с заявками и бронями. На сайт отправляются только даты и статус, без персональных данных.
+    <div className="admin-grid">
+      <header className="admin-page-header">
+        <div>
+          <h1 className="admin-title">Бронирования</h1>
+          <p className="admin-description">
+            Локальная работа с заявками и бронями. На сайт уходят только даты и статус.
           </p>
-          {successMessage ? (
-            <div style={{ marginTop: 16, padding: 16, borderRadius: 14, background: "#ecfdf5", color: "#166534", border: "1px solid #a7f3d0" }}>
-              {successMessage}
-            </div>
-          ) : null}
         </div>
-
-        <button
-          type="button"
-          onClick={() => setShowForm((value) => !value)}
-          style={{
-            padding: "12px 18px",
-            borderRadius: 12,
-            border: "none",
-            background: "#2563eb",
-            color: "white",
-            cursor: "pointer",
-            minWidth: 170,
-          }}
-        >
-          {showForm ? "Скрыть форму" : "Добавить бронь"}
-        </button>
+        <div className="admin-actions">
+          <button type="button" className="admin-button admin-button-secondary" onClick={handleSync} disabled={syncLoading}>
+            {syncLoading ? "Синхронизация..." : "Синхронизировать"}
+          </button>
+          <button type="button" className="admin-button admin-button-primary" onClick={() => setShowForm((value) => !value)}>
+            {showForm ? "Скрыть форму" : "Добавить бронь"}
+          </button>
+        </div>
       </header>
 
-      <section style={{ display: "grid", gridTemplateColumns: "repeat(4,minmax(0,1fr))", gap: 16, marginBottom: 24 }}>
-        <div style={{ padding: 20, borderRadius: 18, background: "white", boxShadow: "0 1px 4px rgba(15,23,42,0.08)" }}>
-          <div style={{ color: "#475569", marginBottom: 8 }}>Всего броней</div>
-          <div style={{ fontSize: 28, fontWeight: 700 }}>{totals.all}</div>
+      {successMessage ? <div className="admin-message success">{successMessage}</div> : null}
+      {syncMessage ? <div className="admin-message success">{syncMessage}</div> : null}
+      {error ? <div className="admin-message error">{error}</div> : null}
+
+      <section className="admin-grid-4">
+        <div className="admin-card admin-stat">
+          <div className="admin-stat-label">Всего броней</div>
+          <div className="admin-stat-value">{totals.all}</div>
         </div>
-        <div style={{ padding: 20, borderRadius: 18, background: "white", boxShadow: "0 1px 4px rgba(15,23,42,0.08)" }}>
-          <div style={{ color: "#475569", marginBottom: 8 }}>Заявки</div>
-          <div style={{ fontSize: 28, fontWeight: 700 }}>{totals.request}</div>
+        <div className="admin-card admin-stat">
+          <div className="admin-stat-label">Заявки</div>
+          <div className="admin-stat-value">{totals.request}</div>
         </div>
-        <div style={{ padding: 20, borderRadius: 18, background: "white", boxShadow: "0 1px 4px rgba(15,23,42,0.08)" }}>
-          <div style={{ color: "#475569", marginBottom: 8 }}>Подтверждённые</div>
-          <div style={{ fontSize: 28, fontWeight: 700 }}>{totals.booked}</div>
+        <div className="admin-card admin-stat">
+          <div className="admin-stat-label">Подтверждено</div>
+          <div className="admin-stat-value">{totals.booked}</div>
         </div>
-        <div style={{ padding: 20, borderRadius: 18, background: "white", boxShadow: "0 1px 4px rgba(15,23,42,0.08)" }}>
-          <div style={{ color: "#475569", marginBottom: 8 }}>Отменённые</div>
-          <div style={{ fontSize: 28, fontWeight: 700 }}>{totals.cancelled}</div>
+        <div className="admin-card admin-stat">
+          <div className="admin-stat-label">Отменено</div>
+          <div className="admin-stat-value">{totals.cancelled}</div>
         </div>
       </section>
 
-      <section style={{ marginBottom: 24, padding: 20, borderRadius: 18, background: "white", boxShadow: "0 1px 4px rgba(15,23,42,0.08)" }}>
-        <div style={{ display: "flex", justifyContent: "space-between", gap: 16, flexWrap: "wrap", alignItems: "center" }}>
-          <div style={{ display: "flex", gap: 10, flexWrap: "wrap" }}>
-            {(["all", "request", "booked", "cancelled"] as FilterKey[]).map((key) => (
-              <button
-                key={key}
-                type="button"
-                onClick={() => setFilter(key)}
-                style={{
-                  padding: "10px 16px",
-                  borderRadius: 9999,
-                  border: key === filter ? "1px solid #2563eb" : "1px solid #d1d5db",
-                  background: key === filter ? "#eff6ff" : "white",
-                  color: "#0f172a",
-                  cursor: "pointer",
-                  fontWeight: key === filter ? 600 : 500,
-                }}
-              >
-                {key === "all" ? "Все" : key === "request" ? "Заявки" : key === "booked" ? "Подтверждённые" : "Отменённые"}
-              </button>
-            ))}
-          </div>
-
-          <div style={{ display: "flex", alignItems: "center", gap: 12, flexWrap: "wrap" }}>
+      <section className="admin-card">
+        <div className="admin-row">
+          {(["all", "request", "booked", "cancelled"] as FilterKey[]).map((key) => (
             <button
+              key={key}
               type="button"
-              onClick={handleSync}
-              disabled={syncLoading}
-              style={{
-                padding: "10px 18px",
-                borderRadius: 10,
-                border: "1px solid #2563eb",
-                background: syncLoading ? "#93c5fd" : "#2563eb",
-                color: "white",
-                cursor: syncLoading ? "not-allowed" : "pointer",
-              }}
+              className={`admin-button ${filter === key ? "admin-button-primary" : "admin-button-secondary"}`}
+              onClick={() => setFilter(key)}
             >
-              {syncLoading ? "Синхронизация..." : "Синхронизировать с сайтом"}
+              {key === "all" ? "Все" : statusLabel(key)}
             </button>
-            <span style={{ color: "#6b7280", fontSize: 14 }}>
-              На сайт отправляются только даты и статус, без персональных данных.
-            </span>
-          </div>
-          {syncMessage ? (
-            <div style={{ marginTop: 12, color: "#166534", fontWeight: 600 }}>{syncMessage}</div>
-          ) : null}
+          ))}
         </div>
-
-        <p style={{ marginTop: 16, color: "#475569" }}>
-          На сайт отправляются только даты и статус, без персональных данных.
-        </p>
       </section>
 
       {showForm ? (
-        <section style={{ marginBottom: 24, padding: 20, borderRadius: 18, background: "white", boxShadow: "0 1px 4px rgba(15,23,42,0.08)" }}>
-          <h2 style={{ marginTop: 0, marginBottom: 16 }}>Добавление брони</h2>
-          <form onSubmit={handleSubmit} style={{ display: "grid", gap: 18 }}>
-            {error ? (
-              <div style={{ padding: 12, borderRadius: 12, background: "#fee2e2", color: "#831843" }}>{error}</div>
-            ) : null}
-            <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 16 }}>
-              <div style={{ display: "grid", gap: 12 }}>
-                <div style={{ fontWeight: 600, color: "#0f172a" }}>Автомобиль и статус</div>
-                <label style={{ display: "grid", gap: 8 }}>
-                  Автомобиль
-                  <select
-                    value={form.carId}
-                    onChange={(event) => setForm({ ...form, carId: event.target.value })}
-                    required
-                    style={{ padding: 12, borderRadius: 12, border: "1px solid #d1d5db" }}
-                  >
-                    <option value="">Выберите автомобиль</option>
-                    {cars.map((car) => (
-                      <option key={car.id} value={car.id}>
-                        {car.name}
-                      </option>
-                    ))}
-                  </select>
-                </label>
-              </div>
-
-              <div style={{ display: "grid", gap: 12 }}>
-                <div style={{ fontWeight: 600, color: "#0f172a" }}>Статус</div>
-                <label style={{ display: "grid", gap: 8 }}>
-                  Статус
-                  <select
-                    value={form.status}
-                    onChange={(event) => setForm({ ...form, status: event.target.value as BookingStatus })}
-                    style={{ padding: 12, borderRadius: 12, border: "1px solid #d1d5db" }}
-                  >
-                    <option value="request">Заявка</option>
-                    <option value="booked">Бронь подтверждена</option>
-                  </select>
-                </label>
-                <span style={{ color: "#475569", fontSize: 13 }}>
-                  Заявка отображается на сайте жёлтым и остаётся выбираемой. Подтверждённая бронь блокирует даты.
-                </span>
-              </div>
-            </div>
-
-            <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 16 }}>
-              <div style={{ display: "grid", gap: 12 }}>
-                <div style={{ fontWeight: 600, color: "#0f172a" }}>Даты</div>
-                <label style={{ display: "grid", gap: 8 }}>
-                  Дата начала
-                  <input
-                    type="date"
-                    value={form.startDate}
-                    onChange={(event) => setForm({ ...form, startDate: event.target.value })}
-                    required
-                    style={{ padding: 12, borderRadius: 12, border: "1px solid #d1d5db" }}
-                  />
-                </label>
-                <label style={{ display: "grid", gap: 8 }}>
-                  Время начала
-                  <input
-                    type="time"
-                    value={form.startTime}
-                    onChange={(event) => setForm({ ...form, startTime: event.target.value })}
-                    required
-                    style={{ padding: 12, borderRadius: 12, border: "1px solid #d1d5db" }}
-                  />
-                </label>
-              </div>
-              <div style={{ display: "grid", gap: 12 }}>
-                <div style={{ visibility: "hidden", height: 0 }}>placeholder</div>
-                <label style={{ display: "grid", gap: 8 }}>
-                  Дата окончания
-                  <input
-                    type="date"
-                    value={form.endDate}
-                    onChange={(event) => setForm({ ...form, endDate: event.target.value })}
-                    required
-                    style={{ padding: 12, borderRadius: 12, border: "1px solid #d1d5db" }}
-                  />
-                </label>
-                <label style={{ display: "grid", gap: 8 }}>
-                  Время окончания
-                  <input
-                    type="time"
-                    value={form.endTime}
-                    onChange={(event) => setForm({ ...form, endTime: event.target.value })}
-                    required
-                    style={{ padding: 12, borderRadius: 12, border: "1px solid #d1d5db" }}
-                  />
-                </label>
-              </div>
-            </div>
-            {dateError ? (
-              <div style={{ color: "#b91c1c", fontSize: 14, marginTop: -8 }}>{dateError}</div>
-            ) : null}
-
-            <div style={{ display: "grid", gap: 12 }}>
-              <div style={{ fontWeight: 600, color: "#0f172a" }}>Клиент</div>
-              <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 16 }}>
-                <label style={{ display: "grid", gap: 8 }}>
-                  Имя клиента
-                  <input
-                    type="text"
-                    value={form.clientName}
-                    onChange={(event) => setForm({ ...form, clientName: event.target.value })}
-                    required
-                    style={{ padding: 12, borderRadius: 12, border: "1px solid #d1d5db" }}
-                  />
-                </label>
-                <label style={{ display: "grid", gap: 8 }}>
-                  Телефон
-                  <input
-                    type="tel"
-                    inputMode="tel"
-                    autoComplete="tel"
-                    placeholder="+7 999 123-45-67"
-                    value={form.clientPhone}
-                    onChange={(event) => setForm({ ...form, clientPhone: event.target.value })}
-                    style={{ padding: 12, borderRadius: 12, border: "1px solid #d1d5db" }}
-                  />
-                </label>
-              </div>
-            </div>
-
-            <div style={{ display: "grid", gap: 12 }}>
-              <div style={{ fontWeight: 600, color: "#0f172a" }}>Комментарий</div>
-              <label style={{ display: "grid", gap: 8 }}>
-                <textarea
-                  value={form.comment}
-                  onChange={(event) => setForm({ ...form, comment: event.target.value })}
-                  rows={4}
-                  style={{ padding: 12, borderRadius: 12, border: "1px solid #d1d5db" }}
-                />
+        <section className="admin-card">
+          <h2 className="admin-form-section-title">Новая бронь</h2>
+          <form onSubmit={handleSubmit} className="admin-grid">
+            <div className="admin-form-section">
+              <h3 className="admin-form-section-title">1. Автомобиль</h3>
+              <label className="admin-label">
+                Автомобиль
+                <select className="admin-select" value={form.carId} onChange={(event) => setForm({ ...form, carId: event.target.value })} required>
+                  <option value="">Выберите автомобиль</option>
+                  {uniqueCars.map((car) => (
+                    <option key={car.id} value={car.id}>
+                      {carLabel(car)}
+                    </option>
+                  ))}
+                </select>
               </label>
             </div>
 
-            <div style={{ display: "flex", gap: 12, flexWrap: "wrap" }}>
-              <button
-                type="submit"
-                disabled={!isFormValid || loading}
-                style={{
-                  padding: "14px 18px",
-                  borderRadius: 12,
-                  border: "none",
-                  background: "#2563eb",
-                  color: "white",
-                  cursor: isFormValid && !loading ? "pointer" : "not-allowed",
-                }}
-              >
+            <div className="admin-form-section">
+              <h3 className="admin-form-section-title">2. Период аренды</h3>
+              <div className="admin-grid-4">
+                <label className="admin-label">
+                  Дата начала
+                  <input className="admin-input" type="date" value={form.startDate} onChange={(event) => setForm({ ...form, startDate: event.target.value })} required />
+                </label>
+                <label className="admin-label">
+                  Время начала
+                  <input className="admin-input" type="time" value={form.startTime} onChange={(event) => setForm({ ...form, startTime: event.target.value })} required />
+                </label>
+                <label className="admin-label">
+                  Дата возврата
+                  <input className="admin-input" type="date" value={form.endDate} onChange={(event) => setForm({ ...form, endDate: event.target.value })} required />
+                </label>
+                <label className="admin-label">
+                  Время возврата
+                  <input className="admin-input" type="time" value={form.endTime} onChange={(event) => setForm({ ...form, endTime: event.target.value })} required />
+                </label>
+              </div>
+              {dateError ? <div className="admin-message error" style={{ marginTop: 12 }}>{dateError}</div> : null}
+            </div>
+
+            <div className="admin-form-section">
+              <h3 className="admin-form-section-title">3. Клиент</h3>
+              <div className="admin-grid">
+                <div>
+                  <div className="admin-muted" style={{ marginBottom: 8, fontWeight: 700 }}>Выбрать клиента из базы</div>
+                  {selectedClient ? (
+                    <div className="admin-selected-client">
+                      <div>
+                        <strong>Выбран:</strong> {form.clientName}
+                        {form.clientPhone ? ` · ${form.clientPhone}` : ""}
+                        <div style={{ marginTop: 6 }}>
+                          <span className="admin-badge info">{clientStatusLabel(selectedClient.client_status)}</span>{" "}
+                          {selectedClient.is_blacklisted ? <span className="admin-badge danger">Чёрный список</span> : null}
+                        </div>
+                      </div>
+                      <button type="button" className="admin-button admin-button-secondary" onClick={clearSelectedClient}>
+                        Сменить
+                      </button>
+                    </div>
+                  ) : (
+                    <div className="admin-autocomplete">
+                      <input
+                        className="admin-input"
+                        type="search"
+                        placeholder="Начните вводить фамилию, имя или телефон"
+                        value={clientSearch}
+                        onChange={(event) => {
+                          const value = event.target.value;
+                          setClientSearch(value);
+                          setClientWarning(null);
+                          loadClientOptions(value);
+                        }}
+                      />
+                      {clientOptions.length > 0 ? (
+                        <div className="admin-autocomplete-list">
+                          {clientOptions.map((client) => (
+                            <button key={client.id} type="button" className="admin-autocomplete-option" onClick={() => selectClient(client)}>
+                              <div style={{ fontWeight: 800 }}>{fullClientName(client)}</div>
+                              <div className="admin-muted" style={{ marginTop: 4 }}>{client.phone || "Телефон не указан"}</div>
+                              <div className="admin-row" style={{ marginTop: 8 }}>
+                                <span className="admin-badge info">{clientStatusLabel(client.client_status)}</span>
+                                {client.is_blacklisted ? <span className="admin-badge danger">Чёрный список</span> : null}
+                              </div>
+                            </button>
+                          ))}
+                        </div>
+                      ) : null}
+                    </div>
+                  )}
+                  {clientWarning ? <div className="admin-message error" style={{ marginTop: 12 }}>{clientWarning}</div> : null}
+                </div>
+
+                <div className="admin-divider-label">или ввести вручную</div>
+                <div className="admin-grid-2">
+                  <label className="admin-label">
+                    Имя клиента
+                    <input
+                      className="admin-input"
+                      value={form.clientId ? "" : form.clientName}
+                      placeholder={form.clientId ? "Клиент выбран из базы" : "Фамилия Имя Отчество"}
+                      disabled={Boolean(form.clientId)}
+                      onChange={(event) => {
+                        setSelectedClient(null);
+                        setForm({ ...form, clientId: "", clientName: event.target.value });
+                      }}
+                      required={!form.clientId}
+                    />
+                  </label>
+                  <label className="admin-label">
+                    Телефон
+                    <input
+                      className="admin-input"
+                      type="tel"
+                      inputMode="tel"
+                      autoComplete="tel"
+                      placeholder="+7 999 123-45-67"
+                      value={form.clientId ? "" : form.clientPhone}
+                      disabled={Boolean(form.clientId)}
+                      onChange={(event) => {
+                        setSelectedClient(null);
+                        setForm({ ...form, clientId: "", clientPhone: event.target.value });
+                      }}
+                    />
+                  </label>
+                </div>
+              </div>
+            </div>
+
+            <div className="admin-form-section">
+              <h3 className="admin-form-section-title">4. Статус</h3>
+              <label className="admin-label">
+                Статус
+                <select className="admin-select" value={form.status} onChange={(event) => setForm({ ...form, status: event.target.value as BookingStatus })}>
+                  <option value="request">Заявка</option>
+                  <option value="booked">Бронь подтверждена</option>
+                </select>
+              </label>
+            </div>
+
+            <div className="admin-form-section">
+              <h3 className="admin-form-section-title">5. Комментарий</h3>
+              <textarea className="admin-textarea" value={form.comment} onChange={(event) => setForm({ ...form, comment: event.target.value })} rows={4} />
+            </div>
+
+            <div className="admin-actions">
+              <button type="submit" className="admin-button admin-button-primary" disabled={!isFormValid || loading}>
                 {loading ? "Сохраняем..." : "Сохранить бронь"}
               </button>
-              <button
-                type="button"
-                onClick={resetForm}
-                disabled={loading}
-                style={{
-                  padding: "14px 18px",
-                  borderRadius: 12,
-                  border: "1px solid #d1d5db",
-                  background: "white",
-                  color: "#0f172a",
-                  cursor: loading ? "not-allowed" : "pointer",
-                }}
-              >
+              <button type="button" className="admin-button admin-button-secondary" onClick={resetForm} disabled={loading}>
                 Очистить форму
               </button>
             </div>
@@ -546,77 +610,61 @@ export default function BookingManager() {
         </section>
       ) : null}
 
-      <section style={{ background: "white", borderRadius: 18, boxShadow: "0 1px 4px rgba(15,23,42,0.08)", padding: 20 }}>
-        <div style={{ display: "grid", gap: 16 }}>
+      <section className="admin-card">
+        <div className="admin-grid">
           {filteredBookings.length === 0 ? (
-            <div style={{ padding: 28, borderRadius: 16, background: "#f8fafc", color: "#475569" }}>
-              Нет броней для выбранного фильтра.
-            </div>
+            <div className="admin-empty">Нет броней для выбранного фильтра.</div>
           ) : (
             filteredBookings.map((booking) => (
-              <div
-                key={booking.id}
-                style={{
-                  display: "grid",
-                  gap: 14,
-                  padding: 20,
-                  borderRadius: 18,
-                  border: "1px solid #e2e8f0",
-                  background: "#ffffff",
-                }}
-              >
-                <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", gap: 12, flexWrap: "wrap" }}>
-                  <div style={{ minWidth: 0 }}>
-                    <div style={{ display: "flex", gap: 10, flexWrap: "wrap", alignItems: "center" }}>
-                      <div style={{ fontSize: 16, fontWeight: 700 }}>{booking.car_name || "Автомобиль"}</div>
-                      <span style={statusBadge(booking.status)}>{statusLabel(booking.status)}</span>
+              <article key={booking.id} className="admin-list-card">
+                <div className="admin-list-card-header">
+                  <div>
+                    <div className="admin-row">
+                      <div className="admin-list-title">{booking.car_name || "Автомобиль"}</div>
+                      <span className={`admin-badge ${booking.status}`}>{statusLabel(booking.status)}</span>
                     </div>
-                    <div style={{ color: "#475569", marginTop: 6 }}>
+                    <div className="admin-muted" style={{ marginTop: 6 }}>
                       {formatDateTime(booking.start_date, booking.start_time)} — {formatDateTime(booking.end_date, booking.end_time)}
                     </div>
                   </div>
-
-                  <div style={{ display: "flex", gap: 8, flexWrap: "wrap" }}>
+                  <div className="admin-actions">
                     {booking.status === "request" ? (
-                      <button
-                        type="button"
-                        onClick={() => handleConfirm(booking.id)}
-                        style={{ padding: "10px 14px", borderRadius: 10, border: "none", background: "#10b981", color: "white", cursor: "pointer" }}
-                      >
+                      <button type="button" className="admin-button admin-button-success" onClick={() => handleConfirm(booking.id)}>
                         Подтвердить бронь
                       </button>
                     ) : null}
                     {booking.status !== "cancelled" ? (
-                      <button
-                        type="button"
-                        onClick={() => handleCancel(booking.id)}
-                        style={{ padding: "10px 14px", borderRadius: 10, border: "none", background: "#ef4444", color: "white", cursor: "pointer" }}
-                      >
+                      <button type="button" className="admin-button admin-button-secondary" onClick={() => handleCancel(booking.id)}>
                         Отменить
                       </button>
                     ) : null}
-                    <button
-                      type="button"
-                      onClick={() => handleDelete(booking.id)}
-                      style={{ padding: "10px 14px", borderRadius: 10, border: "none", background: "#6b7280", color: "white", cursor: "pointer" }}
-                    >
+                    <button type="button" className="admin-button admin-button-danger" onClick={() => handleDelete(booking.id)}>
                       Удалить
                     </button>
                   </div>
                 </div>
 
-                <div style={{ display: "grid", gap: 10, color: "#334155" }}>
-                  <div>
-                    <span style={{ fontWeight: 600 }}>Клиент:</span> {booking.client_name}
+                <div className="admin-field-grid">
+                  <div className="admin-field">
+                    <span>Клиент</span>
+                    {booking.client_id ? (
+                      <Link href={`/admin/clients/${booking.client_id}`}>{booking.client_name}</Link>
+                    ) : (
+                      <div>
+                        {booking.client_name} <span className="admin-badge neutral">Клиент не из базы</span>
+                      </div>
+                    )}
                   </div>
-                  <div>
-                    <span style={{ fontWeight: 600 }}>Телефон:</span> {booking.client_phone || "—"}
+                  <div className="admin-field">
+                    <span>Телефон</span>
+                    {booking.client_phone || "—"}
                   </div>
-                  <div>
-                    <span style={{ fontWeight: 600 }}>Комментарий:</span> {booking.comment || "—"}
+                  <div className="admin-field">
+                    <span>Комментарий</span>
+                    {booking.comment || "—"}
                   </div>
                 </div>
-              </div>
+              </article>
             ))
           )}
         </div>

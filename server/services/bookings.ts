@@ -19,6 +19,7 @@ export interface BookingRow {
   id: string;
   car_id: string;
   car_name: string | null;
+  client_id: string | null;
   client_name: string;
   client_phone: string | null;
   start_date: string;
@@ -33,6 +34,7 @@ export interface BookingRow {
 
 export interface BookingInput {
   carId: string;
+  clientId?: string;
   clientName: string;
   clientPhone?: string;
   startDate: string;
@@ -120,6 +122,7 @@ export async function listBookings() {
     `SELECT b.id,
             b.car_id,
             c.name AS car_name,
+            b.client_id,
             b.client_name,
             b.client_phone,
             b.start_date,
@@ -144,8 +147,25 @@ export async function listBookings() {
 }
 
 export async function getActiveCars() {
-  const result = await query<{ id: string; name: string }>(
-    `SELECT id, name FROM cars WHERE is_active = true ORDER BY name`,
+  const result = await query<{ id: string; name: string; plate_number: string | null }>(
+    `SELECT DISTINCT ON (
+       CASE
+         WHEN NULLIF(TRIM(plate_number), '') IS NOT NULL THEN LOWER(TRIM(plate_number))
+         ELSE LOWER(TRIM(name))
+       END
+     )
+       id,
+       name,
+       plate_number
+     FROM cars
+     WHERE is_active = true
+     ORDER BY
+       CASE
+         WHEN NULLIF(TRIM(plate_number), '') IS NOT NULL THEN LOWER(TRIM(plate_number))
+         ELSE LOWER(TRIM(name))
+       END,
+       name,
+       id`,
     []
   );
   return result.rows;
@@ -154,6 +174,7 @@ export async function getActiveCars() {
 export async function createBooking(input: BookingInput) {
   const {
     carId,
+    clientId = null,
     clientName,
     clientPhone = null,
     startDate,
@@ -162,6 +183,31 @@ export async function createBooking(input: BookingInput) {
     endTime = "12:00",
     comment = null,
   } = input;
+
+  let resolvedClientName = clientName;
+  let resolvedClientPhone = clientPhone;
+  let resolvedClientId = clientId;
+
+  if (clientId) {
+    const clientResult = await query<{
+      last_name: string;
+      first_name: string;
+      middle_name: string | null;
+      phone: string | null;
+    }>(
+      `SELECT last_name, first_name, middle_name, phone FROM clients WHERE id = $1 LIMIT 1`,
+      [clientId]
+    );
+
+    if (clientResult.rows.length === 0) {
+      throw new Error("Клиент не найден");
+    }
+
+    const client = clientResult.rows[0];
+    resolvedClientName = `${client.last_name} ${client.first_name}${client.middle_name ? ` ${client.middle_name}` : ""}`.trim();
+    resolvedClientPhone = client.phone ?? null;
+    resolvedClientId = clientId;
+  }
 
   validateDateTimeRange(startDate, startTime, endDate, endTime);
 
@@ -186,10 +232,10 @@ export async function createBooking(input: BookingInput) {
   }
 
   const result = await query<BookingRow>(
-    `INSERT INTO bookings (car_id, client_name, client_phone, start_date, start_time, end_date, end_time, status, comment)
-     VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9)
-     RETURNING id, car_id, client_name, client_phone, start_date, start_time, end_date, end_time, status, comment, created_at, updated_at`,
-    [carId, clientName, clientPhone, startDate, startTime, endDate, endTime, status, comment]
+    `INSERT INTO bookings (car_id, client_id, client_name, client_phone, start_date, start_time, end_date, end_time, status, comment)
+     VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10)
+     RETURNING id, car_id, client_id, client_name, client_phone, start_date, start_time, end_date, end_time, status, comment, created_at, updated_at`,
+    [carId, resolvedClientId, resolvedClientName, resolvedClientPhone, startDate, startTime, endDate, endTime, status, comment]
   );
 
   return result.rows[0];
