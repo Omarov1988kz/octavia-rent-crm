@@ -22,7 +22,9 @@ export interface BookingRow {
   client_name: string;
   client_phone: string | null;
   start_date: string;
+  start_time: string;
   end_date: string;
+  end_time: string;
   status: BookingStatus;
   comment: string | null;
   created_at: string;
@@ -34,7 +36,9 @@ export interface BookingInput {
   clientName: string;
   clientPhone?: string;
   startDate: string;
+  startTime?: string;
   endDate: string;
+  endTime?: string;
   status?: BookingStatus;
   comment?: string;
 }
@@ -49,7 +53,9 @@ export interface SyncBookingInput {
   externalId: string;
   carKey?: string;
   startDate: string;
+  startTime?: string;
   endDate: string;
+  endTime?: string;
   status: BookingStatus;
 }
 
@@ -72,6 +78,36 @@ function validateDateRange(startDate: string, endDate: string) {
   }
 }
 
+function validateTime(value: string) {
+  if (typeof value !== "string" || !/^\d{2}:\d{2}$/.test(value)) {
+    throw new Error("Неверный формат времени");
+  }
+
+  const [hours, minutes] = value.split(":").map(Number);
+  if (Number.isNaN(hours) || Number.isNaN(minutes) || hours < 0 || hours > 23 || minutes < 0 || minutes > 59) {
+    throw new Error("Неверный формат времени");
+  }
+}
+
+function validateDateTimeRange(startDate: string, startTime: string, endDate: string, endTime: string) {
+  validateDateRange(startDate, endDate);
+  validateTime(startTime);
+  validateTime(endTime);
+
+  const [startYear, startMonth, startDay] = startDate.split("-").map(Number);
+  const [endYear, endMonth, endDay] = endDate.split("-").map(Number);
+  const startValue = startYear * 10000 + startMonth * 100 + startDay;
+  const endValue = endYear * 10000 + endMonth * 100 + endDay;
+  const [startHours, startMinutes] = startTime.split(":").map(Number);
+  const [endHours, endMinutes] = endTime.split(":").map(Number);
+  const startTotal = startHours * 60 + startMinutes;
+  const endTotal = endHours * 60 + endMinutes;
+
+  if (startValue > endValue || (startValue === endValue && startTotal >= endTotal)) {
+    throw new Error("Дата и время окончания должны быть позже начала");
+  }
+}
+
 function sanitizeStatus(value: unknown): BookingStatus {
   if (value === "request" || value === "booked" || value === "cancelled") {
     return value;
@@ -87,14 +123,16 @@ export async function listBookings() {
             b.client_name,
             b.client_phone,
             b.start_date,
+            b.start_time,
             b.end_date,
+            b.end_time,
             b.status,
             b.comment,
             b.created_at,
             b.updated_at
      FROM bookings b
      LEFT JOIN cars c ON c.id = b.car_id
-     ORDER BY b.start_date DESC, b.created_at DESC`,
+     ORDER BY b.start_date DESC, b.start_time DESC, b.created_at DESC`,
     []
   );
 
@@ -114,37 +152,32 @@ export async function getActiveCars() {
 }
 
 export async function createBooking(input: BookingInput) {
-  const { carId, clientName, clientPhone = null, startDate, endDate, comment = null } = input;
-  const startParts = startDate.split("-").map(Number);
-  const endParts = endDate.split("-").map(Number);
+  const {
+    carId,
+    clientName,
+    clientPhone = null,
+    startDate,
+    startTime = "12:00",
+    endDate,
+    endTime = "12:00",
+    comment = null,
+  } = input;
 
-  if (startParts.length !== 3 || endParts.length !== 3 || startParts.some(Number.isNaN) || endParts.some(Number.isNaN)) {
-    throw new Error("Неверный формат дат");
-  }
-
-  const [startYear, startMonth, startDay] = startParts;
-  const [endYear, endMonth, endDay] = endParts;
-
-  const startValue = startYear * 10000 + startMonth * 100 + startDay;
-  const endValue = endYear * 10000 + endMonth * 100 + endDay;
-
-  if (!(startValue < endValue)) {
-    throw new Error("Дата возврата должна быть позже даты начала");
-  }
+  validateDateTimeRange(startDate, startTime, endDate, endTime);
 
   const overlap = await query(
     `SELECT 1
      FROM bookings
      WHERE car_id = $1
        AND status IN ('request', 'booked')
-       AND start_date < $3
-       AND end_date > $2
+       AND (start_date + start_time) < ($4::date + $5::time)
+       AND (end_date + end_time) > ($2::date + $3::time)
      LIMIT 1`,
-    [carId, startDate, endDate]
+    [carId, startDate, startTime, endDate, endTime]
   );
 
   if ((overlap.rowCount ?? 0) > 0) {
-    throw new Error("На эти даты уже есть бронь");
+    throw new Error("На эти даты и время уже есть бронь");
   }
 
   const status = input.status ?? "request";
@@ -153,10 +186,10 @@ export async function createBooking(input: BookingInput) {
   }
 
   const result = await query<BookingRow>(
-    `INSERT INTO bookings (car_id, client_name, client_phone, start_date, end_date, status, comment)
-     VALUES ($1, $2, $3, $4, $5, $6, $7)
-     RETURNING id, car_id, client_name, client_phone, start_date, end_date, status, comment, created_at, updated_at`,
-    [carId, clientName, clientPhone, startDate, endDate, status, comment]
+    `INSERT INTO bookings (car_id, client_name, client_phone, start_date, start_time, end_date, end_time, status, comment)
+     VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9)
+     RETURNING id, car_id, client_name, client_phone, start_date, start_time, end_date, end_time, status, comment, created_at, updated_at`,
+    [carId, clientName, clientPhone, startDate, startTime, endDate, endTime, status, comment]
   );
 
   return result.rows[0];
@@ -166,6 +199,16 @@ export async function cancelBooking(id: string) {
   const result = await query(
     `UPDATE bookings
      SET status = 'cancelled', updated_at = now()
+     WHERE id = $1
+     RETURNING id`,
+    [id]
+  );
+  return (result.rowCount ?? 0) > 0;
+}
+
+export async function deleteBooking(id: string) {
+  const result = await query(
+    `DELETE FROM bookings
      WHERE id = $1
      RETURNING id`,
     [id]
@@ -217,29 +260,45 @@ export async function syncPublicBookings(bookings: SyncBookingInput[]) {
 
     const carKey = typeof booking.carKey === "string" && booking.carKey.trim() ? booking.carKey : "octavia";
     const status = sanitizeStatus(booking.status);
-    validateDateRange(booking.startDate, booking.endDate);
+    const startTime = typeof booking.startTime === "string" && booking.startTime.trim() ? booking.startTime : "12:00";
+    const endTime = typeof booking.endTime === "string" && booking.endTime.trim() ? booking.endTime : "12:00";
+
+    validateDateTimeRange(booking.startDate, startTime, booking.endDate, endTime);
 
     return {
       externalId: booking.externalId,
       carKey,
       startDate: booking.startDate,
+      startTime,
       endDate: booking.endDate,
+      endTime,
       status,
     };
   });
 
   for (const entry of validated) {
     await query(
-      `INSERT INTO public_calendar_entries (external_id, car_key, start_date, end_date, status, source, synced_at, created_at, updated_at)
-       VALUES ($1, $2, $3, $4, $5, $6, now(), now(), now())
+      `INSERT INTO public_calendar_entries (external_id, car_key, start_date, start_time, end_date, end_time, status, source, synced_at, created_at, updated_at)
+       VALUES ($1, $2, $3, $4, $5, $6, $7, $8, now(), now(), now())
        ON CONFLICT (external_id) DO UPDATE
        SET car_key = EXCLUDED.car_key,
            start_date = EXCLUDED.start_date,
+           start_time = EXCLUDED.start_time,
            end_date = EXCLUDED.end_date,
+           end_time = EXCLUDED.end_time,
            status = EXCLUDED.status,
            synced_at = now(),
            updated_at = now()`,
-      [entry.externalId, entry.carKey, entry.startDate, entry.endDate, entry.status, "local_crm"]
+      [
+        entry.externalId,
+        entry.carKey,
+        entry.startDate,
+        entry.startTime,
+        entry.endDate,
+        entry.endTime,
+        entry.status,
+        "local_crm",
+      ]
     );
   }
 

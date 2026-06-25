@@ -19,10 +19,12 @@ export async function POST() {
   const result = await query<{
     id: string;
     start_date: string;
+    start_time: string;
     end_date: string;
+    end_time: string;
     status: string;
   }>(
-    `SELECT id, start_date, end_date, status
+    `SELECT id, start_date, start_time, end_date, end_time, status
      FROM bookings
      ORDER BY created_at DESC`,
     []
@@ -33,7 +35,9 @@ export async function POST() {
       externalId: booking.id,
       carKey: "octavia",
       startDate: booking.start_date,
+      startTime: booking.start_time,
       endDate: booking.end_date,
+      endTime: booking.end_time,
       status: booking.status,
     })),
   };
