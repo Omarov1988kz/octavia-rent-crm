@@ -4,9 +4,11 @@ import Link from "next/link";
 import { useEffect, useMemo, useState, type FormEvent } from "react";
 
 type BookingStatus = "request" | "booked" | "cancelled";
+type ClientStatus = "new" | "checked" | "active" | "problem" | "archived";
 
 type Booking = {
   id: string;
+  car_id: string;
   car_name: string | null;
   car_plate_number: string | null;
   client_id: string | null;
@@ -37,8 +39,16 @@ type ClientSearchResult = {
   first_name: string;
   middle_name?: string | null;
   phone?: string | null;
-  client_status: string;
+  client_status: ClientStatus;
   is_blacklisted: boolean;
+};
+
+type SelectedClient = {
+  id: string;
+  label: string;
+  phone: string;
+  client_status?: ClientStatus;
+  is_blacklisted?: boolean;
 };
 
 type BookingForm = {
@@ -54,6 +64,17 @@ type BookingForm = {
   comment: string;
 };
 
+type QuickClientForm = {
+  last_name: string;
+  first_name: string;
+  middle_name: string;
+  phone: string;
+  email: string;
+  comments: string;
+  acquisition_source: string;
+  client_status: ClientStatus;
+};
+
 const initialForm: BookingForm = {
   carId: "",
   clientId: "",
@@ -65,6 +86,17 @@ const initialForm: BookingForm = {
   endTime: "12:00",
   status: "request",
   comment: "",
+};
+
+const initialQuickClientForm: QuickClientForm = {
+  last_name: "",
+  first_name: "",
+  middle_name: "",
+  phone: "",
+  email: "",
+  comments: "",
+  acquisition_source: "",
+  client_status: "new",
 };
 
 function formatDate(value: string) {
@@ -102,7 +134,7 @@ function statusLabel(status: BookingStatus) {
   }
 }
 
-function clientStatusLabel(status: string) {
+function clientStatusLabel(status?: ClientStatus) {
   switch (status) {
     case "new":
       return "Новый";
@@ -115,7 +147,7 @@ function clientStatusLabel(status: string) {
     case "archived":
       return "Архивный";
     default:
-      return status;
+      return "Клиент";
   }
 }
 
@@ -127,7 +159,7 @@ function isValidDate(startDate: string, endDate: string, startTime: string, endT
   return !Number.isNaN(start.getTime()) && !Number.isNaN(end.getTime()) && end > start;
 }
 
-function fullClientName(client: ClientSearchResult) {
+function fullClientName(client: ClientSearchResult | { last_name: string; first_name: string; middle_name?: string | null }) {
   return `${client.last_name} ${client.first_name}${client.middle_name ? ` ${client.middle_name}` : ""}`.trim();
 }
 
@@ -148,18 +180,37 @@ function dedupeCars(cars: CarOption[]) {
   });
 }
 
-export default function BookingManager() {
+function bookingToForm(booking: Booking): BookingForm {
+  return {
+    carId: booking.car_id,
+    clientId: booking.client_id ?? "",
+    clientName: booking.client_name,
+    clientPhone: booking.client_phone ?? "",
+    startDate: booking.start_date,
+    startTime: booking.start_time ?? "12:00",
+    endDate: booking.end_date,
+    endTime: booking.end_time ?? "12:00",
+    status: booking.status,
+    comment: booking.comment ?? "",
+  };
+}
+
+export default function BookingManager({ initialClientId }: { initialClientId?: string }) {
   const [bookings, setBookings] = useState<Booking[]>([]);
   const [cars, setCars] = useState<CarOption[]>([]);
   const [error, setError] = useState<string | null>(null);
   const [dateError, setDateError] = useState<string | null>(null);
   const [successMessage, setSuccessMessage] = useState<string | null>(null);
   const [showForm, setShowForm] = useState(false);
+  const [editingBookingId, setEditingBookingId] = useState<string | null>(null);
   const [form, setForm] = useState<BookingForm>(initialForm);
   const [clientSearch, setClientSearch] = useState("");
   const [clientOptions, setClientOptions] = useState<ClientSearchResult[]>([]);
-  const [selectedClient, setSelectedClient] = useState<ClientSearchResult | null>(null);
+  const [selectedClient, setSelectedClient] = useState<SelectedClient | null>(null);
   const [clientWarning, setClientWarning] = useState<string | null>(null);
+  const [showQuickClientModal, setShowQuickClientModal] = useState(false);
+  const [quickClientForm, setQuickClientForm] = useState<QuickClientForm>(initialQuickClientForm);
+  const [quickClientLoading, setQuickClientLoading] = useState(false);
   const [loading, setLoading] = useState(false);
   const [syncLoading, setSyncLoading] = useState(false);
   const [syncMessage, setSyncMessage] = useState<string | null>(null);
@@ -177,9 +228,17 @@ export default function BookingManager() {
   }, [bookings]);
 
   const filteredBookings = useMemo(() => {
-    if (filter === "all") return bookings;
-    return bookings.filter((booking) => booking.status === filter);
-  }, [bookings, filter]);
+    return bookings.filter((booking) => {
+      if (initialClientId && booking.client_id !== initialClientId) return false;
+      if (filter !== "all" && booking.status !== filter) return false;
+      return true;
+    });
+  }, [bookings, filter, initialClientId]);
+
+  const filteredClientName = useMemo(() => {
+    if (!initialClientId) return null;
+    return bookings.find((booking) => booking.client_id === initialClientId)?.client_name ?? null;
+  }, [bookings, initialClientId]);
 
   const isFormValid = useMemo(
     () =>
@@ -250,6 +309,69 @@ export default function BookingManager() {
     }
   }
 
+  function resetForm() {
+    setForm(initialForm);
+    setEditingBookingId(null);
+    setClientSearch("");
+    setSelectedClient(null);
+    setClientOptions([]);
+    setClientWarning(null);
+    setError(null);
+    setDateError(null);
+  }
+
+  function openCreateForm() {
+    resetForm();
+    setShowForm(true);
+    setSuccessMessage(null);
+  }
+
+  function startEdit(booking: Booking) {
+    setForm(bookingToForm(booking));
+    setEditingBookingId(booking.id);
+    setSelectedClient(
+      booking.client_id
+        ? {
+            id: booking.client_id,
+            label: booking.client_name,
+            phone: booking.client_phone ?? "",
+          }
+        : null
+    );
+    setClientSearch("");
+    setClientOptions([]);
+    setClientWarning(null);
+    setDateError(null);
+    setSuccessMessage(null);
+    setShowForm(true);
+  }
+
+  function selectClient(client: ClientSearchResult) {
+    const label = fullClientName(client);
+    setSelectedClient({
+      id: client.id,
+      label,
+      phone: client.phone ?? "",
+      client_status: client.client_status,
+      is_blacklisted: client.is_blacklisted,
+    });
+    setClientSearch("");
+    setClientOptions([]);
+    setClientWarning(client.is_blacklisted ? "Клиент в чёрном списке" : null);
+    setForm({
+      ...form,
+      clientId: client.id,
+      clientName: label,
+      clientPhone: client.phone ?? "",
+    });
+  }
+
+  function clearSelectedClient() {
+    setSelectedClient(null);
+    setClientWarning(null);
+    setForm({ ...form, clientId: "", clientName: "", clientPhone: "" });
+  }
+
   async function handleConfirm(id: string) {
     setError(null);
     try {
@@ -300,37 +422,6 @@ export default function BookingManager() {
     }
   }
 
-  function resetForm() {
-    setForm(initialForm);
-    setClientSearch("");
-    setSelectedClient(null);
-    setClientOptions([]);
-    setClientWarning(null);
-    setError(null);
-    setDateError(null);
-    setSuccessMessage(null);
-  }
-
-  function selectClient(client: ClientSearchResult) {
-    const name = fullClientName(client);
-    setSelectedClient(client);
-    setClientSearch("");
-    setClientOptions([]);
-    setClientWarning(client.is_blacklisted ? "Клиент в чёрном списке" : null);
-    setForm({
-      ...form,
-      clientId: client.id,
-      clientName: name,
-      clientPhone: client.phone ?? "",
-    });
-  }
-
-  function clearSelectedClient() {
-    setSelectedClient(null);
-    setClientWarning(null);
-    setForm({ ...form, clientId: "", clientName: "", clientPhone: "" });
-  }
-
   async function handleSubmit(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
     setError(null);
@@ -344,8 +435,8 @@ export default function BookingManager() {
 
     setLoading(true);
     try {
-      const response = await fetch("/api/admin/bookings", {
-        method: "POST",
+      const response = await fetch(editingBookingId ? `/api/admin/bookings/${editingBookingId}` : "/api/admin/bookings", {
+        method: editingBookingId ? "PATCH" : "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
           carId: form.carId,
@@ -363,23 +454,56 @@ export default function BookingManager() {
 
       const result = await parseJson(response);
       if (!response.ok) {
-        const message = result?.message || "Ошибка при создании брони";
-        setError(
-          message.includes("уже есть бронь")
-            ? `Машина занята с ${formatDateTime(form.startDate, form.startTime)} до ${formatDateTime(form.endDate, form.endTime)}`
-            : message
-        );
+        setError(result?.message || (editingBookingId ? "Ошибка при обновлении брони" : "Ошибка при создании брони"));
         return;
       }
 
+      setSuccessMessage(editingBookingId ? "Бронь обновлена" : "Бронь добавлена");
       resetForm();
       setShowForm(false);
-      setSuccessMessage("Бронь добавлена");
       await loadData();
     } catch (submitError) {
-      setError(submitError instanceof Error ? submitError.message : "Ошибка при создании брони");
+      setError(submitError instanceof Error ? submitError.message : editingBookingId ? "Ошибка при обновлении брони" : "Ошибка при создании брони");
     } finally {
       setLoading(false);
+    }
+  }
+
+  async function handleCreateQuickClient(event: FormEvent<HTMLFormElement>) {
+    event.preventDefault();
+    setQuickClientLoading(true);
+    setError(null);
+
+    try {
+      const response = await fetch("/api/admin/clients", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          last_name: quickClientForm.last_name,
+          first_name: quickClientForm.first_name,
+          middle_name: quickClientForm.middle_name,
+          phone: quickClientForm.phone,
+          email: quickClientForm.email,
+          comments: quickClientForm.comments,
+          acquisition_source: quickClientForm.acquisition_source,
+          client_status: quickClientForm.client_status,
+        }),
+      });
+
+      const result = await parseJson(response);
+      if (!response.ok) {
+        setError(result?.message || "Ошибка создания клиента");
+        return;
+      }
+
+      const client = result.client as ClientSearchResult;
+      selectClient(client);
+      setQuickClientForm(initialQuickClientForm);
+      setShowQuickClientModal(false);
+    } catch (createError) {
+      setError(createError instanceof Error ? createError.message : "Ошибка создания клиента");
+    } finally {
+      setQuickClientLoading(false);
     }
   }
 
@@ -409,16 +533,14 @@ export default function BookingManager() {
       <header className="admin-page-header">
         <div>
           <h1 className="admin-title">Бронирования</h1>
-          <p className="admin-description">
-            Локальная работа с заявками и бронями. На сайт уходят только даты и статус.
-          </p>
+          <p className="admin-description">Локальная работа с заявками и бронями. На сайт уходят только даты и статус.</p>
         </div>
         <div className="admin-actions">
           <button type="button" className="admin-button admin-button-secondary" onClick={handleSync} disabled={syncLoading}>
             {syncLoading ? "Синхронизация..." : "Синхронизировать"}
           </button>
-          <button type="button" className="admin-button admin-button-primary" onClick={() => setShowForm((value) => !value)}>
-            {showForm ? "Скрыть форму" : "Добавить бронь"}
+          <button type="button" className="admin-button admin-button-primary" onClick={openCreateForm}>
+            Добавить бронь
           </button>
         </div>
       </header>
@@ -426,35 +548,28 @@ export default function BookingManager() {
       {successMessage ? <div className="admin-message success">{successMessage}</div> : null}
       {syncMessage ? <div className="admin-message success">{syncMessage}</div> : null}
       {error ? <div className="admin-message error">{error}</div> : null}
+      {initialClientId ? (
+        <div className="admin-card admin-row" style={{ justifyContent: "space-between" }}>
+          <div>
+            <strong>Бронирования клиента:</strong> {filteredClientName || initialClientId}
+          </div>
+          <Link className="admin-button admin-button-secondary" href="/admin/bookings">
+            Сбросить фильтр
+          </Link>
+        </div>
+      ) : null}
 
       <section className="admin-grid-4">
-        <div className="admin-card admin-stat">
-          <div className="admin-stat-label">Всего броней</div>
-          <div className="admin-stat-value">{totals.all}</div>
-        </div>
-        <div className="admin-card admin-stat">
-          <div className="admin-stat-label">Заявки</div>
-          <div className="admin-stat-value">{totals.request}</div>
-        </div>
-        <div className="admin-card admin-stat">
-          <div className="admin-stat-label">Подтверждено</div>
-          <div className="admin-stat-value">{totals.booked}</div>
-        </div>
-        <div className="admin-card admin-stat">
-          <div className="admin-stat-label">Отменено</div>
-          <div className="admin-stat-value">{totals.cancelled}</div>
-        </div>
+        <div className="admin-card admin-stat"><div className="admin-stat-label">Всего броней</div><div className="admin-stat-value">{totals.all}</div></div>
+        <div className="admin-card admin-stat"><div className="admin-stat-label">Заявки</div><div className="admin-stat-value">{totals.request}</div></div>
+        <div className="admin-card admin-stat"><div className="admin-stat-label">Подтверждено</div><div className="admin-stat-value">{totals.booked}</div></div>
+        <div className="admin-card admin-stat"><div className="admin-stat-label">Отменено</div><div className="admin-stat-value">{totals.cancelled}</div></div>
       </section>
 
       <section className="admin-card">
         <div className="admin-row">
           {(["all", "request", "booked", "cancelled"] as FilterKey[]).map((key) => (
-            <button
-              key={key}
-              type="button"
-              className={`admin-button ${filter === key ? "admin-button-primary" : "admin-button-secondary"}`}
-              onClick={() => setFilter(key)}
-            >
+            <button key={key} type="button" className={`admin-button ${filter === key ? "admin-button-primary" : "admin-button-secondary"}`} onClick={() => setFilter(key)}>
               {key === "all" ? "Все" : statusLabel(key)}
             </button>
           ))}
@@ -463,7 +578,12 @@ export default function BookingManager() {
 
       {showForm ? (
         <section className="admin-card">
-          <h2 className="admin-form-section-title">Новая бронь</h2>
+          <div className="admin-row" style={{ justifyContent: "space-between", marginBottom: 12 }}>
+            <h2 className="admin-form-section-title" style={{ margin: 0 }}>{editingBookingId ? "Редактирование брони" : "Новая бронь"}</h2>
+            <button type="button" className="admin-button admin-button-secondary" onClick={() => { resetForm(); setShowForm(false); }}>
+              Закрыть форму
+            </button>
+          </div>
           <form onSubmit={handleSubmit} className="admin-grid">
             <div className="admin-form-section">
               <h3 className="admin-form-section-title">1. Автомобиль</h3>
@@ -472,9 +592,7 @@ export default function BookingManager() {
                 <select className="admin-select" value={form.carId} onChange={(event) => setForm({ ...form, carId: event.target.value })} required>
                   <option value="">Выберите автомобиль</option>
                   {uniqueCars.map((car) => (
-                    <option key={car.id} value={car.id}>
-                      {carLabel(car)}
-                    </option>
+                    <option key={car.id} value={car.id}>{carLabel(car)}</option>
                   ))}
                 </select>
               </label>
@@ -483,22 +601,10 @@ export default function BookingManager() {
             <div className="admin-form-section">
               <h3 className="admin-form-section-title">2. Период аренды</h3>
               <div className="admin-grid-4">
-                <label className="admin-label">
-                  Дата начала
-                  <input className="admin-input" type="date" value={form.startDate} onChange={(event) => setForm({ ...form, startDate: event.target.value })} required />
-                </label>
-                <label className="admin-label">
-                  Время начала
-                  <input className="admin-input" type="time" value={form.startTime} onChange={(event) => setForm({ ...form, startTime: event.target.value })} required />
-                </label>
-                <label className="admin-label">
-                  Дата возврата
-                  <input className="admin-input" type="date" value={form.endDate} onChange={(event) => setForm({ ...form, endDate: event.target.value })} required />
-                </label>
-                <label className="admin-label">
-                  Время возврата
-                  <input className="admin-input" type="time" value={form.endTime} onChange={(event) => setForm({ ...form, endTime: event.target.value })} required />
-                </label>
+                <label className="admin-label">Дата начала<input className="admin-input" type="date" value={form.startDate} onChange={(event) => setForm({ ...form, startDate: event.target.value })} required /></label>
+                <label className="admin-label">Время начала<input className="admin-input" type="time" value={form.startTime} onChange={(event) => setForm({ ...form, startTime: event.target.value })} required /></label>
+                <label className="admin-label">Дата возврата<input className="admin-input" type="date" value={form.endDate} onChange={(event) => setForm({ ...form, endDate: event.target.value })} required /></label>
+                <label className="admin-label">Время возврата<input className="admin-input" type="time" value={form.endTime} onChange={(event) => setForm({ ...form, endTime: event.target.value })} required /></label>
               </div>
               {dateError ? <div className="admin-message error" style={{ marginTop: 12 }}>{dateError}</div> : null}
             </div>
@@ -507,20 +613,23 @@ export default function BookingManager() {
               <h3 className="admin-form-section-title">3. Клиент</h3>
               <div className="admin-grid">
                 <div>
-                  <div className="admin-muted" style={{ marginBottom: 8, fontWeight: 700 }}>Выбрать клиента из базы</div>
+                  <div className="admin-row" style={{ justifyContent: "space-between", marginBottom: 8 }}>
+                    <div className="admin-muted" style={{ fontWeight: 700 }}>Выбрать клиента из базы</div>
+                    <button type="button" className="admin-button admin-button-secondary" onClick={() => setShowQuickClientModal(true)}>
+                      + Создать нового клиента
+                    </button>
+                  </div>
                   {selectedClient ? (
                     <div className="admin-selected-client">
                       <div>
-                        <strong>Выбран:</strong> {form.clientName}
-                        {form.clientPhone ? ` · ${form.clientPhone}` : ""}
+                        <strong>Выбран:</strong> {selectedClient.label}
+                        {selectedClient.phone ? ` · ${selectedClient.phone}` : ""}
                         <div style={{ marginTop: 6 }}>
                           <span className="admin-badge info">{clientStatusLabel(selectedClient.client_status)}</span>{" "}
                           {selectedClient.is_blacklisted ? <span className="admin-badge danger">Чёрный список</span> : null}
                         </div>
                       </div>
-                      <button type="button" className="admin-button admin-button-secondary" onClick={clearSelectedClient}>
-                        Сменить
-                      </button>
+                      <button type="button" className="admin-button admin-button-secondary" onClick={clearSelectedClient}>Сменить</button>
                     </div>
                   ) : (
                     <div className="admin-autocomplete">
@@ -598,6 +707,7 @@ export default function BookingManager() {
                 <select className="admin-select" value={form.status} onChange={(event) => setForm({ ...form, status: event.target.value as BookingStatus })}>
                   <option value="request">Заявка</option>
                   <option value="booked">Бронь подтверждена</option>
+                  <option value="cancelled">Отменено</option>
                 </select>
               </label>
             </div>
@@ -609,11 +719,9 @@ export default function BookingManager() {
 
             <div className="admin-actions">
               <button type="submit" className="admin-button admin-button-primary" disabled={!isFormValid || loading}>
-                {loading ? "Сохраняем..." : "Сохранить бронь"}
+                {loading ? "Сохраняем..." : editingBookingId ? "Сохранить изменения" : "Сохранить бронь"}
               </button>
-              <button type="button" className="admin-button admin-button-secondary" onClick={resetForm} disabled={loading}>
-                Очистить форму
-              </button>
+              <button type="button" className="admin-button admin-button-secondary" onClick={resetForm} disabled={loading}>Очистить форму</button>
             </div>
           </form>
         </section>
@@ -635,24 +743,20 @@ export default function BookingManager() {
                       </div>
                       <span className={`admin-badge ${booking.status}`}>{statusLabel(booking.status)}</span>
                     </div>
-                    <div className="admin-muted" style={{ marginTop: 6 }}>
-                      {formatDateTime(booking.start_date, booking.start_time)} — {formatDateTime(booking.end_date, booking.end_time)}
-                    </div>
+                    <div className="admin-muted" style={{ marginTop: 6 }}>{formatDateTime(booking.start_date, booking.start_time)} — {formatDateTime(booking.end_date, booking.end_time)}</div>
                   </div>
                   <div className="admin-actions">
+                    <a className="admin-button admin-button-primary" href={`/api/admin/contracts/rental/${booking.id}`}>
+                      Сформировать договор
+                    </a>
+                    <button type="button" className="admin-button admin-button-secondary" onClick={() => startEdit(booking)}>Редактировать</button>
                     {booking.status === "request" ? (
-                      <button type="button" className="admin-button admin-button-success" onClick={() => handleConfirm(booking.id)}>
-                        Подтвердить бронь
-                      </button>
+                      <button type="button" className="admin-button admin-button-success" onClick={() => handleConfirm(booking.id)}>Подтвердить бронь</button>
                     ) : null}
                     {booking.status !== "cancelled" ? (
-                      <button type="button" className="admin-button admin-button-secondary" onClick={() => handleCancel(booking.id)}>
-                        Отменить
-                      </button>
+                      <button type="button" className="admin-button admin-button-secondary" onClick={() => handleCancel(booking.id)}>Отменить</button>
                     ) : null}
-                    <button type="button" className="admin-button admin-button-danger" onClick={() => handleDelete(booking.id)}>
-                      Удалить
-                    </button>
+                    <button type="button" className="admin-button admin-button-danger" onClick={() => handleDelete(booking.id)}>Удалить</button>
                   </div>
                 </div>
 
@@ -662,25 +766,58 @@ export default function BookingManager() {
                     {booking.client_id ? (
                       <Link href={`/admin/clients/${booking.client_id}`}>{booking.client_name}</Link>
                     ) : (
-                      <div>
-                        {booking.client_name} <span className="admin-badge neutral">Клиент не из базы</span>
-                      </div>
+                      <div>{booking.client_name} <span className="admin-badge neutral">Клиент не из базы</span></div>
                     )}
                   </div>
-                  <div className="admin-field">
-                    <span>Телефон</span>
-                    {booking.client_phone || "—"}
-                  </div>
-                  <div className="admin-field">
-                    <span>Комментарий</span>
-                    {booking.comment || "—"}
-                  </div>
+                  <div className="admin-field"><span>Телефон</span>{booking.client_phone || "—"}</div>
+                  <div className="admin-field"><span>Комментарий</span>{booking.comment || "—"}</div>
                 </div>
               </article>
             ))
           )}
         </div>
       </section>
+
+      {showQuickClientModal ? (
+        <div className="admin-modal-backdrop" role="dialog" aria-modal="true" onMouseDown={(event) => {
+          if (event.target === event.currentTarget) setShowQuickClientModal(false);
+        }}>
+          <div className="admin-modal-panel" style={{ width: "min(720px, 100%)" }}>
+            <div className="admin-modal-header">
+              <div>
+                <h2 className="admin-title" style={{ margin: 0 }}>Новый клиент</h2>
+                <p className="admin-description">Короткая карточка для выбора в бронь.</p>
+              </div>
+              <button type="button" className="admin-button admin-button-secondary" onClick={() => setShowQuickClientModal(false)}>Закрыть</button>
+            </div>
+            <form className="admin-modal-body" onSubmit={handleCreateQuickClient}>
+              <div className="admin-grid-2">
+                <label className="admin-label">Фамилия<input className="admin-input" value={quickClientForm.last_name} onChange={(event) => setQuickClientForm({ ...quickClientForm, last_name: event.target.value })} required /></label>
+                <label className="admin-label">Имя<input className="admin-input" value={quickClientForm.first_name} onChange={(event) => setQuickClientForm({ ...quickClientForm, first_name: event.target.value })} required /></label>
+                <label className="admin-label">Отчество<input className="admin-input" value={quickClientForm.middle_name} onChange={(event) => setQuickClientForm({ ...quickClientForm, middle_name: event.target.value })} /></label>
+                <label className="admin-label">Телефон<input className="admin-input" type="tel" value={quickClientForm.phone} onChange={(event) => setQuickClientForm({ ...quickClientForm, phone: event.target.value })} /></label>
+                <label className="admin-label">Email<input className="admin-input" type="email" value={quickClientForm.email} onChange={(event) => setQuickClientForm({ ...quickClientForm, email: event.target.value })} /></label>
+                <label className="admin-label">Источник привлечения<input className="admin-input" value={quickClientForm.acquisition_source} onChange={(event) => setQuickClientForm({ ...quickClientForm, acquisition_source: event.target.value })} /></label>
+                <label className="admin-label">
+                  Статус клиента
+                  <select className="admin-select" value={quickClientForm.client_status} onChange={(event) => setQuickClientForm({ ...quickClientForm, client_status: event.target.value as ClientStatus })}>
+                    <option value="new">Новый</option>
+                    <option value="checked">Проверен</option>
+                    <option value="active">Активный</option>
+                    <option value="problem">Проблемный</option>
+                    <option value="archived">Архивный</option>
+                  </select>
+                </label>
+              </div>
+              <label className="admin-label">Комментарий<textarea className="admin-textarea" rows={3} value={quickClientForm.comments} onChange={(event) => setQuickClientForm({ ...quickClientForm, comments: event.target.value })} /></label>
+              <div className="admin-actions">
+                <button type="submit" className="admin-button admin-button-primary" disabled={quickClientLoading}>{quickClientLoading ? "Создаём..." : "Создать и выбрать"}</button>
+                <button type="button" className="admin-button admin-button-secondary" disabled={quickClientLoading} onClick={() => setShowQuickClientModal(false)}>Отмена</button>
+              </div>
+            </form>
+          </div>
+        </div>
+      ) : null}
     </div>
   );
 }

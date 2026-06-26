@@ -7,6 +7,8 @@ const navItems = [
   { href: "/admin/bookings", label: "Бронирования" },
   { href: "/admin/clients", label: "Клиенты" },
   { href: "/admin/cars", label: "Автомобили" },
+  { href: "/admin/document-templates", label: "Шаблоны документов" },
+  { href: "/admin/settings", label: "Настройки" },
 ];
 
 export default function AdminShell({ children }: { children: React.ReactNode }) {

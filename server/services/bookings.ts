@@ -77,7 +77,7 @@ function validateDateRange(startDate: string, endDate: string) {
   const startValue = startYear * 10000 + startMonth * 100 + startDay;
   const endValue = endYear * 10000 + endMonth * 100 + endDay;
 
-  if (!(startValue < endValue)) {
+  if (!(startValue <= endValue)) {
     throw new Error("Дата возврата должна быть позже даты начала");
   }
 }
@@ -110,6 +110,14 @@ function validateDateTimeRange(startDate: string, startTime: string, endDate: st
   if (startValue > endValue || (startValue === endValue && startTotal >= endTotal)) {
     throw new Error("Дата и время окончания должны быть позже начала");
   }
+}
+
+function formatDisplayDateTime(date: string, time: string) {
+  const [year, month, day] = date.split("-");
+  if (!year || !month || !day) {
+    return `${date} ${time}`;
+  }
+  return `${day}.${month}.${year} ${time}`;
 }
 
 function sanitizeStatus(value: unknown): BookingStatus {
@@ -149,7 +157,93 @@ export async function listBookings() {
   }));
 }
 
+export async function listBookingsByClient(clientId: string) {
+  const result = await query<BookingRow>(
+    `SELECT b.id,
+            b.car_id,
+            c.name AS car_name,
+            c.plate_number AS car_plate_number,
+            b.client_id,
+            b.client_name,
+            b.client_phone,
+            b.start_date,
+            b.start_time,
+            b.end_date,
+            b.end_time,
+            b.status,
+            b.comment,
+            b.created_at,
+            b.updated_at
+     FROM bookings b
+     LEFT JOIN cars c ON c.id = b.car_id
+     WHERE b.client_id = $1
+     ORDER BY b.start_date DESC, b.start_time DESC, b.created_at DESC`,
+    [clientId]
+  );
+
+  return result.rows.map((row) => ({
+    ...row,
+    start_date: formatPgDate(row.start_date),
+    end_date: formatPgDate(row.end_date),
+  }));
+}
+
 export const getActiveCars = listActiveCars;
+
+async function resolveBookingClient(clientId: string | null, clientName: string, clientPhone: string | null) {
+  if (!clientId) {
+    return {
+      resolvedClientId: null,
+      resolvedClientName: clientName,
+      resolvedClientPhone: clientPhone,
+    };
+  }
+
+  const clientResult = await query<{
+    last_name: string;
+    first_name: string;
+    middle_name: string | null;
+    phone: string | null;
+  }>(
+    `SELECT last_name, first_name, middle_name, phone FROM clients WHERE id = $1 LIMIT 1`,
+    [clientId]
+  );
+
+  if (clientResult.rows.length === 0) {
+    throw new Error("Клиент не найден");
+  }
+
+  const client = clientResult.rows[0];
+  return {
+    resolvedClientId: clientId,
+    resolvedClientName: `${client.last_name} ${client.first_name}${client.middle_name ? ` ${client.middle_name}` : ""}`.trim(),
+    resolvedClientPhone: client.phone ?? null,
+  };
+}
+
+async function assertNoActiveOverlap(carId: string, startDate: string, startTime: string, endDate: string, endTime: string, excludeBookingId?: string) {
+  const values = excludeBookingId
+    ? [carId, startDate, startTime, endDate, endTime, excludeBookingId]
+    : [carId, startDate, startTime, endDate, endTime];
+
+  const excludeClause = excludeBookingId ? "AND id <> $6" : "";
+  const overlap = await query<{ start_date: string | Date; start_time: string; end_date: string | Date; end_time: string }>(
+    `SELECT start_date, start_time, end_date, end_time
+     FROM bookings
+     WHERE car_id = $1
+       ${excludeClause}
+       AND status IN ('request', 'booked')
+       AND (start_date + start_time) < ($4::date + $5::time)
+       AND (end_date + end_time) > ($2::date + $3::time)
+     LIMIT 1`,
+    values
+  );
+
+  if ((overlap.rowCount ?? 0) > 0) {
+    const booking = overlap.rows[0];
+    throw new Error(`Машина занята с ${formatDisplayDateTime(formatPgDate(booking.start_date), booking.start_time)} до ${formatDisplayDateTime(formatPgDate(booking.end_date), booking.end_time)}`);
+  }
+}
 
 export async function createBooking(input: BookingInput) {
   const {
@@ -164,51 +258,15 @@ export async function createBooking(input: BookingInput) {
     comment = null,
   } = input;
 
-  let resolvedClientName = clientName;
-  let resolvedClientPhone = clientPhone;
-  let resolvedClientId = clientId;
-
-  if (clientId) {
-    const clientResult = await query<{
-      last_name: string;
-      first_name: string;
-      middle_name: string | null;
-      phone: string | null;
-    }>(
-      `SELECT last_name, first_name, middle_name, phone FROM clients WHERE id = $1 LIMIT 1`,
-      [clientId]
-    );
-
-    if (clientResult.rows.length === 0) {
-      throw new Error("Клиент не найден");
-    }
-
-    const client = clientResult.rows[0];
-    resolvedClientName = `${client.last_name} ${client.first_name}${client.middle_name ? ` ${client.middle_name}` : ""}`.trim();
-    resolvedClientPhone = client.phone ?? null;
-    resolvedClientId = clientId;
-  }
-
-  validateDateTimeRange(startDate, startTime, endDate, endTime);
-
-  const overlap = await query(
-    `SELECT 1
-     FROM bookings
-     WHERE car_id = $1
-       AND status IN ('request', 'booked')
-       AND (start_date + start_time) < ($4::date + $5::time)
-       AND (end_date + end_time) > ($2::date + $3::time)
-     LIMIT 1`,
-    [carId, startDate, startTime, endDate, endTime]
-  );
-
-  if ((overlap.rowCount ?? 0) > 0) {
-    throw new Error("На эти даты и время уже есть бронь");
-  }
+  const { resolvedClientId, resolvedClientName, resolvedClientPhone } = await resolveBookingClient(clientId, clientName, clientPhone);
 
   const status = input.status ?? "request";
   if (!activeStatuses.includes(status) && status !== "cancelled") {
     throw new Error("Неверный статус бронирования");
+  }
+  validateDateTimeRange(startDate, startTime, endDate, endTime);
+  if (activeStatuses.includes(status)) {
+    await assertNoActiveOverlap(carId, startDate, startTime, endDate, endTime);
   }
 
   const result = await query<BookingRow>(
@@ -219,6 +277,53 @@ export async function createBooking(input: BookingInput) {
   );
 
   return result.rows[0];
+}
+
+export async function updateBooking(id: string, input: BookingInput) {
+  const current = await query<BookingRow>(`SELECT * FROM bookings WHERE id = $1 LIMIT 1`, [id]);
+  if (current.rows.length === 0) {
+    return null;
+  }
+
+  const {
+    carId,
+    clientId = null,
+    clientName,
+    clientPhone = null,
+    startDate,
+    startTime = "12:00",
+    endDate,
+    endTime = "12:00",
+    comment = null,
+  } = input;
+
+  const status = input.status ? sanitizeStatus(input.status) : "request";
+  const { resolvedClientId, resolvedClientName, resolvedClientPhone } = await resolveBookingClient(clientId, clientName, clientPhone);
+
+  validateDateTimeRange(startDate, startTime, endDate, endTime);
+  if (activeStatuses.includes(status)) {
+    await assertNoActiveOverlap(carId, startDate, startTime, endDate, endTime, id);
+  }
+
+  const result = await query<BookingRow>(
+    `UPDATE bookings SET
+       car_id = $1,
+       client_id = $2,
+       client_name = $3,
+       client_phone = $4,
+       start_date = $5,
+       start_time = $6,
+       end_date = $7,
+       end_time = $8,
+       status = $9,
+       comment = $10,
+       updated_at = now()
+     WHERE id = $11
+     RETURNING id, car_id, client_id, client_name, client_phone, start_date, start_time, end_date, end_time, status, comment, created_at, updated_at`,
+    [carId, resolvedClientId, resolvedClientName, resolvedClientPhone, startDate, startTime, endDate, endTime, status, comment, id]
+  );
+
+  return result.rows[0] ?? null;
 }
 
 export async function cancelBooking(id: string) {

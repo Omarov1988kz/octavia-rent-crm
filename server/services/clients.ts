@@ -110,6 +110,18 @@ function normalizeOptionalDate(value?: string | null) {
   return normalized.length > 0 ? normalized : null;
 }
 
+function todayDateString() {
+  const now = new Date();
+  const year = now.getFullYear();
+  const month = String(now.getMonth() + 1).padStart(2, "0");
+  const day = String(now.getDate()).padStart(2, "0");
+  return `${year}-${month}-${day}`;
+}
+
+function normalizeRequiredDate(value?: string | null) {
+  return normalizeOptionalDate(value) ?? todayDateString();
+}
+
 export async function listClients(params: ListClientsParams = {}) {
   const conditions: string[] = [];
   const values: unknown[] = [];
@@ -212,7 +224,7 @@ export async function createClient(input: ClientInput) {
       normalizeOptionalString(input.driver_license_country),
       normalizeOptionalString(input.kbm),
       normalizeOptionalString(input.inn),
-      normalizeOptionalDate(input.client_registration_date),
+      normalizeRequiredDate(input.client_registration_date),
       clientStatus,
       normalizeOptionalString(input.preferences),
       normalizeOptionalString(input.comments),
@@ -289,7 +301,7 @@ export async function updateClient(id: string, input: ClientInput) {
       normalizeOptionalString(input.driver_license_country),
       normalizeOptionalString(input.kbm),
       normalizeOptionalString(input.inn),
-      normalizeOptionalDate(input.client_registration_date),
+      normalizeRequiredDate(input.client_registration_date),
       clientStatus,
       normalizeOptionalString(input.preferences),
       normalizeOptionalString(input.comments),

@@ -206,12 +206,54 @@ ALTER TABLE IF EXISTS clients
 
 ALTER TABLE IF EXISTS bookings
   ADD COLUMN IF NOT EXISTS client_id uuid REFERENCES clients(id) ON DELETE SET NULL;
+ALTER TABLE IF EXISTS bookings
+  ADD COLUMN IF NOT EXISTS contract_number text;
+ALTER TABLE IF EXISTS bookings
+  ADD COLUMN IF NOT EXISTS contract_date date;
 
 CREATE INDEX IF NOT EXISTS clients_last_name_idx ON clients(last_name);
 CREATE INDEX IF NOT EXISTS clients_phone_idx ON clients(phone);
 CREATE INDEX IF NOT EXISTS clients_email_idx ON clients(email);
 CREATE INDEX IF NOT EXISTS clients_status_idx ON clients(client_status);
 CREATE INDEX IF NOT EXISTS clients_blacklist_idx ON clients(is_blacklisted);
+
+CREATE TABLE IF NOT EXISTS document_templates (
+  id uuid PRIMARY KEY DEFAULT gen_random_uuid(),
+  template_key text NOT NULL UNIQUE,
+  title text NOT NULL,
+  file_name text NOT NULL,
+  file_path text NOT NULL,
+  description text,
+  is_active boolean NOT NULL DEFAULT true,
+  created_at timestamptz DEFAULT now(),
+  updated_at timestamptz DEFAULT now()
+);
+
+CREATE TABLE IF NOT EXISTS owner_settings (
+  id uuid PRIMARY KEY DEFAULT gen_random_uuid(),
+  full_name text,
+  inn text,
+  passport_series_number text,
+  passport_issued_by text,
+  passport_issued_date date,
+  passport_department_code text,
+  registration_address text,
+  phone text,
+  email text,
+  created_at timestamptz DEFAULT now(),
+  updated_at timestamptz DEFAULT now()
+);
+
+INSERT INTO document_templates (template_key, title, file_name, file_path, description, is_active)
+VALUES (
+  'rental_contract',
+  'Договор аренды',
+  'rental-contract-template.docx',
+  'templates/rental-contract-template.docx',
+  'DOCX-шаблон договора аренды автомобиля без экипажа',
+  true
+)
+ON CONFLICT (template_key) DO NOTHING;
 
 -- Пример данных
 INSERT INTO cars (name, plate_number)
