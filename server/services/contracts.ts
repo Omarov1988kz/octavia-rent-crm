@@ -98,6 +98,14 @@ function fullClientName(client: ContractClientRow | null, fallback: string) {
   return `${client.last_name} ${client.first_name}${client.middle_name ? ` ${client.middle_name}` : ""}`.trim();
 }
 
+function signatureName(fullName: string) {
+  const parts = fullName.trim().split(/\s+/).filter(Boolean);
+  const [lastName, firstName, middleName] = parts;
+  if (!lastName) return "";
+  const initials = [firstName, middleName].filter(Boolean).map((part) => `${part.charAt(0).toUpperCase()}.`).join("");
+  return initials ? `${lastName} ${initials}` : lastName;
+}
+
 function daysBetween(startDate: string, endDate: string) {
   const start = new Date(`${startDate}T00:00:00`);
   const end = new Date(`${endDate}T00:00:00`);
@@ -329,7 +337,7 @@ export async function generateRentalContract(bookingId: string) {
     contract_number: String(contractDocument.contract_number),
     contract_date: formatDisplayDate(contractDocument.contract_date),
     owner_full_name: dash(owner?.full_name),
-    owner_signature_name: ownerFullName,
+    owner_signature_name: signatureName(ownerFullName),
     owner_inn: dash(owner?.inn),
     owner_passport: dash(owner?.passport_series_number),
     owner_passport_issued_by: dash(owner?.passport_issued_by),
@@ -339,7 +347,7 @@ export async function generateRentalContract(bookingId: string) {
     owner_phone: dash(owner?.phone),
     owner_email: dash(owner?.email),
     client_full_name: clientFullName,
-    client_signature_name: clientFullName,
+    client_signature_name: signatureName(clientFullName),
     client_inn: dash(client?.inn),
     client_passport: dash(client?.document_series_number),
     client_passport_issued_by: dash(client?.document_issued_by),

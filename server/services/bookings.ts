@@ -50,6 +50,8 @@ export interface BookingInput {
 export interface PublicCalendarBooking {
   startDate: string;
   endDate: string;
+  startTime: string;
+  endTime: string;
   status: Exclude<BookingStatus, "cancelled">;
 }
 
@@ -118,6 +120,10 @@ function formatDisplayDateTime(date: string, time: string) {
     return `${date} ${time}`;
   }
   return `${day}.${month}.${year} ${time}`;
+}
+
+function formatPublicTime(value: string | null | undefined) {
+  return value ? value.slice(0, 5) : "12:00";
 }
 
 function sanitizeStatus(value: unknown): BookingStatus {
@@ -367,18 +373,20 @@ export async function getBookedDateRanges(carKey?: string) {
     params.push(carKey);
   }
 
-  const result = await query<{ start_date: string | Date; end_date: string | Date; status: BookingStatus }>(
-    `SELECT start_date, end_date, status
+  const result = await query<{ start_date: string | Date; start_time: string; end_date: string | Date; end_time: string; status: BookingStatus }>(
+    `SELECT start_date, start_time, end_date, end_time, status
      FROM public_calendar_entries
      WHERE status IN ('request', 'booked')
      ${filter}
-     ORDER BY start_date`,
+     ORDER BY start_date, start_time`,
     params
   );
 
   return result.rows.map((row) => ({
     startDate: formatPgDate(row.start_date),
     endDate: formatPgDate(row.end_date),
+    startTime: formatPublicTime(row.start_time),
+    endTime: formatPublicTime(row.end_time),
     status: row.status as Exclude<BookingStatus, "cancelled">,
   }));
 }
