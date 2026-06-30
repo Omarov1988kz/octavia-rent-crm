@@ -21,10 +21,10 @@ export async function DELETE(request: Request, { params }: { params: { id: strin
 
 export async function PATCH(request: Request, { params }: { params: { id: string } }) {
   const body = await request.json();
-  const { carId, clientId, clientName, clientPhone, startDate, startTime, endDate, endTime, status, comment } = body;
+  const { carId, clientId, startDate, startTime, endDate, endTime, status, comment } = body;
 
   try {
-    const booking = await updateBooking(params.id, { carId, clientId, clientName, clientPhone, startDate, startTime, endDate, endTime, status, comment });
+    const booking = await updateBooking(params.id, { carId, clientId, startDate, startTime, endDate, endTime, status, comment });
     if (!booking) {
       return NextResponse.json({ message: "Бронь не найдена" }, { status: 404 });
     }

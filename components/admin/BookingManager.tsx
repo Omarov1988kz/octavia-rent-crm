@@ -54,8 +54,6 @@ type SelectedClient = {
 type BookingForm = {
   carId: string;
   clientId: string;
-  clientName: string;
-  clientPhone: string;
   startDate: string;
   startTime: string;
   endDate: string;
@@ -102,8 +100,6 @@ type ContractParamsForm = {
 const initialForm: BookingForm = {
   carId: "",
   clientId: "",
-  clientName: "",
-  clientPhone: "",
   startDate: "",
   startTime: "12:00",
   endDate: "",
@@ -130,7 +126,12 @@ function formatDate(value: string) {
 }
 
 function formatTime(value?: string) {
-  return value || "12:00";
+  return value ? value.slice(0, 5) : "12:00";
+}
+
+function normalizeTime(value?: string | null) {
+  if (!value) return "12:00";
+  return value.slice(0, 5);
 }
 
 function formatDateTime(date: string, time?: string) {
@@ -195,8 +196,8 @@ function clientStatusLabel(status?: ClientStatus) {
 function isValidDate(startDate: string, endDate: string, startTime: string, endTime: string) {
   if (!startDate || !endDate || !startTime || !endTime) return false;
 
-  const start = new Date(`${startDate}T${startTime}:00`);
-  const end = new Date(`${endDate}T${endTime}:00`);
+  const start = new Date(`${startDate}T${normalizeTime(startTime)}:00`);
+  const end = new Date(`${endDate}T${normalizeTime(endTime)}:00`);
   return !Number.isNaN(start.getTime()) && !Number.isNaN(end.getTime()) && end > start;
 }
 
@@ -225,12 +226,10 @@ function bookingToForm(booking: Booking): BookingForm {
   return {
     carId: booking.car_id,
     clientId: booking.client_id ?? "",
-    clientName: booking.client_name,
-    clientPhone: booking.client_phone ?? "",
     startDate: booking.start_date,
-    startTime: booking.start_time ?? "12:00",
+    startTime: normalizeTime(booking.start_time),
     endDate: booking.end_date,
-    endTime: booking.end_time ?? "12:00",
+    endTime: normalizeTime(booking.end_time),
     status: booking.status,
     comment: booking.comment ?? "",
   };
@@ -245,6 +244,7 @@ export default function BookingManager({ initialClientId }: { initialClientId?: 
   const [showForm, setShowForm] = useState(false);
   const [editingBookingId, setEditingBookingId] = useState<string | null>(null);
   const [form, setForm] = useState<BookingForm>(initialForm);
+  const [initialEditForm, setInitialEditForm] = useState<BookingForm | null>(null);
   const [clientSearch, setClientSearch] = useState("");
   const [clientOptions, setClientOptions] = useState<ClientSearchResult[]>([]);
   const [selectedClient, setSelectedClient] = useState<SelectedClient | null>(null);
@@ -289,15 +289,34 @@ export default function BookingManager({ initialClientId }: { initialClientId?: 
     () =>
       Boolean(
         form.carId &&
-          form.clientName.trim() &&
+          form.clientId &&
           form.startDate &&
           form.startTime &&
           form.endDate &&
           form.endTime &&
+          form.status &&
           isValidDate(form.startDate, form.endDate, form.startTime, form.endTime)
       ),
     [form]
   );
+
+  const hasFormChanges = useMemo(() => {
+    if (!editingBookingId) return true;
+    if (!initialEditForm) return false;
+
+    return (
+      form.carId !== initialEditForm.carId ||
+      form.clientId !== initialEditForm.clientId ||
+      form.startDate !== initialEditForm.startDate ||
+      normalizeTime(form.startTime) !== normalizeTime(initialEditForm.startTime) ||
+      form.endDate !== initialEditForm.endDate ||
+      normalizeTime(form.endTime) !== normalizeTime(initialEditForm.endTime) ||
+      form.status !== initialEditForm.status ||
+      form.comment !== initialEditForm.comment
+    );
+  }, [editingBookingId, form, initialEditForm]);
+
+  const canSubmitForm = isFormValid && hasFormChanges;
 
   useEffect(() => {
     loadData();
@@ -357,6 +376,7 @@ export default function BookingManager({ initialClientId }: { initialClientId?: 
   function resetForm() {
     setForm(initialForm);
     setEditingBookingId(null);
+    setInitialEditForm(null);
     setClientSearch("");
     setSelectedClient(null);
     setClientOptions([]);
@@ -372,7 +392,9 @@ export default function BookingManager({ initialClientId }: { initialClientId?: 
   }
 
   function startEdit(booking: Booking) {
-    setForm(bookingToForm(booking));
+    const nextForm = bookingToForm(booking);
+    setForm(nextForm);
+    setInitialEditForm(nextForm);
     setEditingBookingId(booking.id);
     setSelectedClient(
       booking.client_id
@@ -385,7 +407,7 @@ export default function BookingManager({ initialClientId }: { initialClientId?: 
     );
     setClientSearch("");
     setClientOptions([]);
-    setClientWarning(null);
+    setClientWarning(booking.client_id ? null : "Для сохранения выберите клиента из базы.");
     setDateError(null);
     setSuccessMessage(null);
     setShowForm(true);
@@ -406,15 +428,13 @@ export default function BookingManager({ initialClientId }: { initialClientId?: 
     setForm({
       ...form,
       clientId: client.id,
-      clientName: label,
-      clientPhone: client.phone ?? "",
     });
   }
 
   function clearSelectedClient() {
     setSelectedClient(null);
-    setClientWarning(null);
-    setForm({ ...form, clientId: "", clientName: "", clientPhone: "" });
+    setClientWarning("Выберите клиента из базы или создайте нового клиента.");
+    setForm({ ...form, clientId: "" });
   }
 
   async function handleConfirm(id: string) {
@@ -478,20 +498,25 @@ export default function BookingManager({ initialClientId }: { initialClientId?: 
       return;
     }
 
+    if (!form.clientId) {
+      setClientWarning("Выберите клиента из базы или создайте нового клиента.");
+      return;
+    }
+
     setLoading(true);
     try {
+      const startTime = normalizeTime(form.startTime);
+      const endTime = normalizeTime(form.endTime);
       const response = await fetch(editingBookingId ? `/api/admin/bookings/${editingBookingId}` : "/api/admin/bookings", {
         method: editingBookingId ? "PATCH" : "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
           carId: form.carId,
-          clientId: form.clientId || undefined,
-          clientName: form.clientName,
-          clientPhone: form.clientPhone,
+          clientId: form.clientId,
           startDate: form.startDate,
-          startTime: form.startTime,
+          startTime,
           endDate: form.endDate,
-          endTime: form.endTime,
+          endTime,
           status: form.status,
           comment: form.comment,
         }),
@@ -796,39 +821,6 @@ export default function BookingManager({ initialClientId }: { initialClientId?: 
                   {clientWarning ? <div className="admin-message error" style={{ marginTop: 12 }}>{clientWarning}</div> : null}
                 </div>
 
-                <div className="admin-divider-label">или ввести вручную</div>
-                <div className="admin-grid-2">
-                  <label className="admin-label">
-                    Имя клиента
-                    <input
-                      className="admin-input"
-                      value={form.clientId ? "" : form.clientName}
-                      placeholder={form.clientId ? "Клиент выбран из базы" : "Фамилия Имя Отчество"}
-                      disabled={Boolean(form.clientId)}
-                      onChange={(event) => {
-                        setSelectedClient(null);
-                        setForm({ ...form, clientId: "", clientName: event.target.value });
-                      }}
-                      required={!form.clientId}
-                    />
-                  </label>
-                  <label className="admin-label">
-                    Телефон
-                    <input
-                      className="admin-input"
-                      type="tel"
-                      inputMode="tel"
-                      autoComplete="tel"
-                      placeholder="+7 999 123-45-67"
-                      value={form.clientId ? "" : form.clientPhone}
-                      disabled={Boolean(form.clientId)}
-                      onChange={(event) => {
-                        setSelectedClient(null);
-                        setForm({ ...form, clientId: "", clientPhone: event.target.value });
-                      }}
-                    />
-                  </label>
-                </div>
               </div>
             </div>
 
@@ -850,7 +842,7 @@ export default function BookingManager({ initialClientId }: { initialClientId?: 
             </div>
 
             <div className="admin-actions">
-              <button type="submit" className="admin-button admin-button-primary" disabled={!isFormValid || loading}>
+              <button type="submit" className="admin-button admin-button-primary" disabled={!canSubmitForm || loading}>
                 {loading ? "Сохраняем..." : editingBookingId ? "Сохранить изменения" : "Сохранить бронь"}
               </button>
               <button type="button" className="admin-button admin-button-secondary" onClick={resetForm} disabled={loading}>Очистить форму</button>

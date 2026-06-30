@@ -167,7 +167,11 @@ CREATE TABLE IF NOT EXISTS clients (
   preferences text,
   comments text,
   social_links text,
+  additional_phones jsonb NOT NULL DEFAULT '[]'::jsonb,
+  social_profiles jsonb NOT NULL DEFAULT '[]'::jsonb,
   acquisition_source text,
+  lead_source text,
+  lead_source_comment text,
   is_blacklisted boolean NOT NULL DEFAULT false,
   blacklist_reason text,
   created_at timestamptz NOT NULL DEFAULT now(),
@@ -229,7 +233,15 @@ ALTER TABLE IF EXISTS clients
 ALTER TABLE IF EXISTS clients
   ADD COLUMN IF NOT EXISTS social_links text;
 ALTER TABLE IF EXISTS clients
+  ADD COLUMN IF NOT EXISTS additional_phones jsonb NOT NULL DEFAULT '[]'::jsonb;
+ALTER TABLE IF EXISTS clients
+  ADD COLUMN IF NOT EXISTS social_profiles jsonb NOT NULL DEFAULT '[]'::jsonb;
+ALTER TABLE IF EXISTS clients
   ADD COLUMN IF NOT EXISTS acquisition_source text;
+ALTER TABLE IF EXISTS clients
+  ADD COLUMN IF NOT EXISTS lead_source text;
+ALTER TABLE IF EXISTS clients
+  ADD COLUMN IF NOT EXISTS lead_source_comment text;
 ALTER TABLE IF EXISTS clients
   ADD COLUMN IF NOT EXISTS is_blacklisted boolean NOT NULL DEFAULT false;
 ALTER TABLE IF EXISTS clients

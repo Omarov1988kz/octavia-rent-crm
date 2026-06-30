@@ -11,10 +11,10 @@ export async function GET() {
 
 export async function POST(request: Request) {
   const body = await request.json();
-  const { carId, clientId, clientName, clientPhone, startDate, startTime, endDate, endTime, status, comment } = body;
+  const { carId, clientId, startDate, startTime, endDate, endTime, status, comment } = body;
 
   try {
-    const booking = await createBooking({ carId, clientId, clientName, clientPhone, startDate, startTime, endDate, endTime, status, comment });
+    const booking = await createBooking({ carId, clientId, startDate, startTime, endDate, endTime, status, comment });
     return NextResponse.json({ booking });
   } catch (error) {
     return NextResponse.json({ message: error instanceof Error ? error.message : "Ошибка создания брони" }, { status: 400 });

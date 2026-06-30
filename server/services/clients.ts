@@ -2,6 +2,8 @@ import { query } from "@/server/db";
 
 export type ClientStatus = "new" | "checked" | "active" | "problem" | "archived";
 export type ClientGender = "male" | "female" | "other" | "unknown";
+export type AdditionalPhone = { phone: string; comment?: string };
+export type SocialProfile = { type: string; value: string; comment?: string };
 
 export interface ClientRow {
   id: string;
@@ -32,7 +34,11 @@ export interface ClientRow {
   preferences: string | null;
   comments: string | null;
   social_links: string | null;
+  additional_phones: AdditionalPhone[] | null;
+  social_profiles: SocialProfile[] | null;
   acquisition_source: string | null;
+  lead_source: string | null;
+  lead_source_comment: string | null;
   is_blacklisted: boolean;
   blacklist_reason: string | null;
   created_at: string;
@@ -67,7 +73,11 @@ export interface ClientInput {
   preferences?: string;
   comments?: string;
   social_links?: string;
+  additional_phones?: AdditionalPhone[];
+  social_profiles?: SocialProfile[];
   acquisition_source?: string;
+  lead_source?: string;
+  lead_source_comment?: string;
   is_blacklisted?: boolean;
   blacklist_reason?: string;
 }
@@ -110,6 +120,27 @@ function normalizeOptionalString(value?: string | null) {
 function normalizeOptionalDate(value?: string | null) {
   const normalized = value?.trim() ?? "";
   return normalized.length > 0 ? normalized : null;
+}
+
+function normalizeAdditionalPhones(value?: AdditionalPhone[] | null) {
+  if (!Array.isArray(value)) return [];
+  return value
+    .map((item) => ({
+      phone: normalizeOptionalString(item?.phone) ?? "",
+      comment: normalizeOptionalString(item?.comment),
+    }))
+    .filter((item) => item.phone);
+}
+
+function normalizeSocialProfiles(value?: SocialProfile[] | null) {
+  if (!Array.isArray(value)) return [];
+  return value
+    .map((item) => ({
+      type: normalizeOptionalString(item?.type) ?? "other",
+      value: normalizeOptionalString(item?.value) ?? "",
+      comment: normalizeOptionalString(item?.comment),
+    }))
+    .filter((item) => item.value);
 }
 
 function todayDateString() {
@@ -197,13 +228,18 @@ export async function createClient(input: ClientInput) {
       preferences,
       comments,
       social_links,
+      additional_phones,
+      social_profiles,
       acquisition_source,
+      lead_source,
+      lead_source_comment,
       is_blacklisted,
       blacklist_reason
     ) VALUES (
       $1, $2, $3, $4, $5, $6, $7, $8, $9, $10,
       $11, $12, $13, $14, $15, $16, $17, $18, $19, $20,
-      $21, $22, $23, $24, $25, $26, $27, $28, $29, $30
+      $21, $22, $23, $24, $25, $26, $27, $28, $29, $30,
+      $31, $32, $33, $34
     ) RETURNING *`,
     [
       input.last_name.trim(),
@@ -233,7 +269,11 @@ export async function createClient(input: ClientInput) {
       normalizeOptionalString(input.preferences),
       normalizeOptionalString(input.comments),
       normalizeOptionalString(input.social_links),
+      JSON.stringify(normalizeAdditionalPhones(input.additional_phones)),
+      JSON.stringify(normalizeSocialProfiles(input.social_profiles)),
       normalizeOptionalString(input.acquisition_source),
+      normalizeOptionalString(input.lead_source),
+      normalizeOptionalString(input.lead_source_comment),
       isBlacklisted,
       normalizeOptionalString(input.blacklist_reason),
     ]
@@ -278,11 +318,15 @@ export async function updateClient(id: string, input: ClientInput) {
       preferences = $25,
       comments = $26,
       social_links = $27,
-      acquisition_source = $28,
-      is_blacklisted = $29,
-      blacklist_reason = $30,
+      additional_phones = $28,
+      social_profiles = $29,
+      acquisition_source = $30,
+      lead_source = $31,
+      lead_source_comment = $32,
+      is_blacklisted = $33,
+      blacklist_reason = $34,
       updated_at = now()
-    WHERE id = $31
+    WHERE id = $35
     RETURNING *`,
     [
       input.last_name.trim(),
@@ -312,7 +356,11 @@ export async function updateClient(id: string, input: ClientInput) {
       normalizeOptionalString(input.preferences),
       normalizeOptionalString(input.comments),
       normalizeOptionalString(input.social_links),
+      JSON.stringify(normalizeAdditionalPhones(input.additional_phones)),
+      JSON.stringify(normalizeSocialProfiles(input.social_profiles)),
       normalizeOptionalString(input.acquisition_source),
+      normalizeOptionalString(input.lead_source),
+      normalizeOptionalString(input.lead_source_comment),
       isBlacklisted,
       normalizeOptionalString(input.blacklist_reason),
       id,

@@ -37,7 +37,7 @@ export interface BookingRow {
 export interface BookingInput {
   carId: string;
   clientId?: string;
-  clientName: string;
+  clientName?: string;
   clientPhone?: string;
   startDate: string;
   startTime?: string;
@@ -196,11 +196,16 @@ export async function listBookingsByClient(clientId: string) {
 
 export const getActiveCars = listActiveCars;
 
-async function resolveBookingClient(clientId: string | null, clientName: string, clientPhone: string | null) {
+async function resolveBookingClient(clientId: string | null, clientName: string | null, clientPhone: string | null) {
   if (!clientId) {
+    const fallbackClientName = clientName?.trim() ?? "";
+    if (!fallbackClientName) {
+      throw new Error("Выберите клиента из базы или создайте нового клиента.");
+    }
+
     return {
       resolvedClientId: null,
-      resolvedClientName: clientName,
+      resolvedClientName: fallbackClientName,
       resolvedClientPhone: clientPhone,
     };
   }
@@ -255,7 +260,7 @@ export async function createBooking(input: BookingInput) {
   const {
     carId,
     clientId = null,
-    clientName,
+    clientName = null,
     clientPhone = null,
     startDate,
     startTime = "12:00",
@@ -294,7 +299,7 @@ export async function updateBooking(id: string, input: BookingInput) {
   const {
     carId,
     clientId = null,
-    clientName,
+    clientName = null,
     clientPhone = null,
     startDate,
     startTime = "12:00",
