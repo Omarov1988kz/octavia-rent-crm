@@ -28,6 +28,11 @@ type Car = {
   price_7_14_days: string | null;
   price_15_30_days: string | null;
   price_30_plus_days: string | null;
+  price_2_3_days: string | null;
+  price_4_6_days: string | null;
+  price_7_13_days: string | null;
+  price_14_21_days: string | null;
+  price_22_plus_days: string | null;
   deposit_amount: string | null;
   ownership_type: CarOwnershipType;
   status: CarStatus;
@@ -49,12 +54,11 @@ type CarForm = {
   mileage: string;
   car_class: string;
   registration_certificate: string;
-  price_1_2_days: string;
-  price_3_6_days: string;
-  price_7_14_days: string;
-  price_15_30_days: string;
-  price_30_plus_days: string;
-  deposit_amount: string;
+  price_2_3_days: string;
+  price_4_6_days: string;
+  price_7_13_days: string;
+  price_14_21_days: string;
+  price_22_plus_days: string;
   ownership_type: CarOwnershipType;
   status: CarStatus;
   comment: string;
@@ -75,12 +79,11 @@ const initialForm: CarForm = {
   mileage: "",
   car_class: "",
   registration_certificate: "",
-  price_1_2_days: "",
-  price_3_6_days: "",
-  price_7_14_days: "",
-  price_15_30_days: "",
-  price_30_plus_days: "",
-  deposit_amount: "",
+  price_2_3_days: "",
+  price_4_6_days: "",
+  price_7_13_days: "",
+  price_14_21_days: "",
+  price_22_plus_days: "",
   ownership_type: "own",
   status: "active",
   comment: "",
@@ -93,6 +96,11 @@ async function parseJson(response: Response) {
     return null;
   }
 }
+
+type Deposit = {
+  car_class: string;
+  deposit_amount: number;
+};
 
 function statusLabel(status: CarStatus) {
   switch (status) {
@@ -134,6 +142,12 @@ function emptyToDash(value: string | number | null | undefined) {
   return String(value);
 }
 
+function formatMoney(value: number | string | null | undefined) {
+  if (value === null || value === undefined || value === "") return "—";
+  const parsed = typeof value === "number" ? value : Number(value);
+  return Number.isFinite(parsed) ? `${Math.round(parsed).toLocaleString("ru-RU")} ₽` : "—";
+}
+
 function carToForm(car: Car): CarForm {
   return {
     name: car.name,
@@ -150,12 +164,11 @@ function carToForm(car: Car): CarForm {
     mileage: car.mileage ? String(car.mileage) : "",
     car_class: car.car_class ?? "",
     registration_certificate: car.registration_certificate ?? "",
-    price_1_2_days: car.price_1_2_days ?? "",
-    price_3_6_days: car.price_3_6_days ?? "",
-    price_7_14_days: car.price_7_14_days ?? "",
-    price_15_30_days: car.price_15_30_days ?? "",
-    price_30_plus_days: car.price_30_plus_days ?? "",
-    deposit_amount: car.deposit_amount ?? "",
+    price_2_3_days: car.price_2_3_days ?? car.price_1_2_days ?? "",
+    price_4_6_days: car.price_4_6_days ?? car.price_3_6_days ?? "",
+    price_7_13_days: car.price_7_13_days ?? car.price_7_14_days ?? "",
+    price_14_21_days: car.price_14_21_days ?? car.price_15_30_days ?? "",
+    price_22_plus_days: car.price_22_plus_days ?? car.price_30_plus_days ?? "",
     ownership_type: car.ownership_type,
     status: car.status,
     comment: car.comment ?? "",
@@ -170,12 +183,11 @@ function buildPayload(form: CarForm) {
     plate_number: form.plate_number.trim() || null,
     car_class: form.car_class.trim() || null,
     registration_certificate: form.registration_certificate.trim() || null,
-    price_1_2_days: form.price_1_2_days.trim() ? Number(form.price_1_2_days.replace(",", ".")) : null,
-    price_3_6_days: form.price_3_6_days.trim() ? Number(form.price_3_6_days.replace(",", ".")) : null,
-    price_7_14_days: form.price_7_14_days.trim() ? Number(form.price_7_14_days.replace(",", ".")) : null,
-    price_15_30_days: form.price_15_30_days.trim() ? Number(form.price_15_30_days.replace(",", ".")) : null,
-    price_30_plus_days: form.price_30_plus_days.trim() ? Number(form.price_30_plus_days.replace(",", ".")) : null,
-    deposit_amount: form.deposit_amount.trim() ? Number(form.deposit_amount.replace(",", ".")) : null,
+    price_2_3_days: form.price_2_3_days.trim() ? Number(form.price_2_3_days.replace(",", ".")) : null,
+    price_4_6_days: form.price_4_6_days.trim() ? Number(form.price_4_6_days.replace(",", ".")) : null,
+    price_7_13_days: form.price_7_13_days.trim() ? Number(form.price_7_13_days.replace(",", ".")) : null,
+    price_14_21_days: form.price_14_21_days.trim() ? Number(form.price_14_21_days.replace(",", ".")) : null,
+    price_22_plus_days: form.price_22_plus_days.trim() ? Number(form.price_22_plus_days.replace(",", ".")) : null,
   };
 }
 
@@ -191,6 +203,24 @@ export default function CarManager() {
   const [saving, setSaving] = useState(false);
   const [message, setMessage] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
+  const [deposits, setDeposits] = useState<Deposit[]>([]);
+
+  const depositByClass = useMemo(() => {
+    const map = new Map<string, number>();
+    for (const deposit of deposits) {
+      map.set(deposit.car_class.trim().toLowerCase(), Number(deposit.deposit_amount));
+    }
+    return map;
+  }, [deposits]);
+
+  const selectedClassDeposit = useMemo(() => {
+    const carClass = form.car_class.trim();
+    if (!carClass) return { label: "Залог по умолчанию", amount: 10000 };
+    return {
+      label: "Залог по классу",
+      amount: depositByClass.get(carClass.toLowerCase()) ?? 10000,
+    };
+  }, [depositByClass, form.car_class]);
 
   const totals = useMemo(() => {
     const summary = { all: 0, active: 0, maintenance: 0, inactive: 0 };
@@ -206,6 +236,22 @@ export default function CarManager() {
   useEffect(() => {
     loadCars();
   }, [search, status, ownershipType]);
+
+  useEffect(() => {
+    loadDeposits();
+  }, []);
+
+  async function loadDeposits() {
+    try {
+      const response = await fetch("/api/admin/settings/deposits");
+      const result = await parseJson(response);
+      if (response.ok) {
+        setDeposits(result?.deposits || []);
+      }
+    } catch {
+      setDeposits([]);
+    }
+  }
 
   async function loadCars() {
     setLoading(true);
@@ -407,6 +453,7 @@ export default function CarManager() {
                 <label className="admin-label">
                   Класс автомобиля
                   <input className="admin-input" list="car-class-options" value={form.car_class} onChange={(event) => setForm({ ...form, car_class: event.target.value })} />
+                  <span className="admin-muted" style={{ fontSize: 12 }}>{selectedClassDeposit.label}: {formatMoney(selectedClassDeposit.amount)}</span>
                   <datalist id="car-class-options">
                     <option value="эконом" />
                     <option value="комфорт" />
@@ -433,12 +480,11 @@ export default function CarManager() {
             <div className="admin-form-section">
               <h3 className="admin-form-section-title">Цены по срокам аренды</h3>
               <div className="admin-grid-4">
-                <label className="admin-label">1-2 дня<input className="admin-input" type="number" min="0" step="1" value={form.price_1_2_days} onChange={(event) => setForm({ ...form, price_1_2_days: event.target.value })} /></label>
-                <label className="admin-label">3-6 дней<input className="admin-input" type="number" min="0" step="1" value={form.price_3_6_days} onChange={(event) => setForm({ ...form, price_3_6_days: event.target.value })} /></label>
-                <label className="admin-label">7-14 дней<input className="admin-input" type="number" min="0" step="1" value={form.price_7_14_days} onChange={(event) => setForm({ ...form, price_7_14_days: event.target.value })} /></label>
-                <label className="admin-label">15-30 дней<input className="admin-input" type="number" min="0" step="1" value={form.price_15_30_days} onChange={(event) => setForm({ ...form, price_15_30_days: event.target.value })} /></label>
-                <label className="admin-label">31+ дней<input className="admin-input" type="number" min="0" step="1" value={form.price_30_plus_days} onChange={(event) => setForm({ ...form, price_30_plus_days: event.target.value })} /></label>
-                <label className="admin-label">Залог<input className="admin-input" type="number" min="0" step="1" value={form.deposit_amount} onChange={(event) => setForm({ ...form, deposit_amount: event.target.value })} /></label>
+                <label className="admin-label">2-3 дня<input className="admin-input" type="number" min="0" step="1" value={form.price_2_3_days} onChange={(event) => setForm({ ...form, price_2_3_days: event.target.value })} /></label>
+                <label className="admin-label">4-6 дней<input className="admin-input" type="number" min="0" step="1" value={form.price_4_6_days} onChange={(event) => setForm({ ...form, price_4_6_days: event.target.value })} /></label>
+                <label className="admin-label">7-13 дней<input className="admin-input" type="number" min="0" step="1" value={form.price_7_13_days} onChange={(event) => setForm({ ...form, price_7_13_days: event.target.value })} /></label>
+                <label className="admin-label">14-21 день<input className="admin-input" type="number" min="0" step="1" value={form.price_14_21_days} onChange={(event) => setForm({ ...form, price_14_21_days: event.target.value })} /></label>
+                <label className="admin-label">22+ дней<input className="admin-input" type="number" min="0" step="1" value={form.price_22_plus_days} onChange={(event) => setForm({ ...form, price_22_plus_days: event.target.value })} /></label>
               </div>
             </div>
 
@@ -549,7 +595,10 @@ export default function CarManager() {
                   </div>
                   <div className="admin-field">
                     <span>Класс</span>
-                    {emptyToDash(car.car_class)}
+                    <div>{emptyToDash(car.car_class)}</div>
+                    <div className="admin-muted" style={{ fontSize: 12 }}>
+                      {car.car_class ? "Залог по классу" : "Залог по умолчанию"}: {formatMoney(car.car_class ? depositByClass.get(car.car_class.trim().toLowerCase()) ?? 10000 : 10000)}
+                    </div>
                   </div>
                   <div className="admin-field">
                     <span>Свидетельство о регистрации</span>
@@ -562,16 +611,12 @@ export default function CarManager() {
                   <div className="admin-field">
                     <span>Тарифы</span>
                     {[
-                      car.price_1_2_days ? `1-2: ${Number(car.price_1_2_days).toLocaleString("ru-RU")} ₽` : null,
-                      car.price_3_6_days ? `3-6: ${Number(car.price_3_6_days).toLocaleString("ru-RU")} ₽` : null,
-                      car.price_7_14_days ? `7-14: ${Number(car.price_7_14_days).toLocaleString("ru-RU")} ₽` : null,
-                      car.price_15_30_days ? `15-30: ${Number(car.price_15_30_days).toLocaleString("ru-RU")} ₽` : null,
-                      car.price_30_plus_days ? `31+: ${Number(car.price_30_plus_days).toLocaleString("ru-RU")} ₽` : null,
+                      car.price_2_3_days ? `2-3: ${Number(car.price_2_3_days).toLocaleString("ru-RU")} ₽` : null,
+                      car.price_4_6_days ? `4-6: ${Number(car.price_4_6_days).toLocaleString("ru-RU")} ₽` : null,
+                      car.price_7_13_days ? `7-13: ${Number(car.price_7_13_days).toLocaleString("ru-RU")} ₽` : null,
+                      car.price_14_21_days ? `14-21: ${Number(car.price_14_21_days).toLocaleString("ru-RU")} ₽` : null,
+                      car.price_22_plus_days ? `22+: ${Number(car.price_22_plus_days).toLocaleString("ru-RU")} ₽` : null,
                     ].filter(Boolean).join("; ") || "—"}
-                  </div>
-                  <div className="admin-field">
-                    <span>Залог</span>
-                    {car.deposit_amount ? `${Number(car.deposit_amount).toLocaleString("ru-RU")} ₽` : "—"}
                   </div>
                   <div className="admin-field">
                     <span>Комментарий</span>

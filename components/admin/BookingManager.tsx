@@ -147,6 +147,13 @@ function parseNumber(value: string) {
   return Number.isFinite(parsed) ? parsed : 0;
 }
 
+function normalizeNumberString(value: string, fallback = 0) {
+  const trimmed = value.trim();
+  if (!trimmed) return fallback;
+  const parsed = Number(trimmed.replace(",", "."));
+  return Number.isFinite(parsed) ? parsed : fallback;
+}
+
 async function parseJson(response: Response) {
   try {
     return await response.json();
@@ -603,7 +610,12 @@ export default function BookingManager({ initialClientId }: { initialClientId?: 
       const response = await fetch(`/api/admin/contracts/rental/${contractBookingId}`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify(contractForm),
+        body: JSON.stringify({
+          daily_price: normalizeNumberString(contractForm.daily_price, 0),
+          allowed_mileage: normalizeNumberString(contractForm.allowed_mileage, 250),
+          deposit_amount: normalizeNumberString(contractForm.deposit_amount, 10000),
+          discount_percent: normalizeNumberString(contractForm.discount_percent, 0),
+        }),
       });
       if (!response.ok) {
         const result = await parseJson(response);

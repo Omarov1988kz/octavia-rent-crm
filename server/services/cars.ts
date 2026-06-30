@@ -25,6 +25,11 @@ export interface CarRow {
   price_7_14_days: string | null;
   price_15_30_days: string | null;
   price_30_plus_days: string | null;
+  price_2_3_days: string | null;
+  price_4_6_days: string | null;
+  price_7_13_days: string | null;
+  price_14_21_days: string | null;
+  price_22_plus_days: string | null;
   deposit_amount: string | null;
   ownership_type: CarOwnershipType;
   status: CarStatus;
@@ -60,6 +65,11 @@ export interface CarInput {
   price_7_14_days?: number | string | null;
   price_15_30_days?: number | string | null;
   price_30_plus_days?: number | string | null;
+  price_2_3_days?: number | string | null;
+  price_4_6_days?: number | string | null;
+  price_7_13_days?: number | string | null;
+  price_14_21_days?: number | string | null;
+  price_22_plus_days?: number | string | null;
   deposit_amount?: number | string | null;
   ownership_type?: CarOwnershipType | null;
   status?: CarStatus | null;
@@ -122,11 +132,16 @@ function normalizeCarInput(input: CarInput) {
     mileage: normalizeInteger(input.mileage),
     car_class: normalizeOptionalString(input.car_class),
     registration_certificate: normalizeOptionalString(input.registration_certificate),
-    price_1_2_days: normalizeMoney(input.price_1_2_days),
-    price_3_6_days: normalizeMoney(input.price_3_6_days),
-    price_7_14_days: normalizeMoney(input.price_7_14_days),
-    price_15_30_days: normalizeMoney(input.price_15_30_days),
-    price_30_plus_days: normalizeMoney(input.price_30_plus_days),
+    price_1_2_days: normalizeMoney(input.price_1_2_days ?? input.price_2_3_days),
+    price_3_6_days: normalizeMoney(input.price_3_6_days ?? input.price_4_6_days),
+    price_7_14_days: normalizeMoney(input.price_7_14_days ?? input.price_7_13_days),
+    price_15_30_days: normalizeMoney(input.price_15_30_days ?? input.price_14_21_days),
+    price_30_plus_days: normalizeMoney(input.price_30_plus_days ?? input.price_22_plus_days),
+    price_2_3_days: normalizeMoney(input.price_2_3_days),
+    price_4_6_days: normalizeMoney(input.price_4_6_days),
+    price_7_13_days: normalizeMoney(input.price_7_13_days),
+    price_14_21_days: normalizeMoney(input.price_14_21_days),
+    price_22_plus_days: normalizeMoney(input.price_22_plus_days),
     deposit_amount: normalizeMoney(input.deposit_amount),
     ownership_type: sanitizeOwnershipType(input.ownership_type),
     status,
@@ -217,6 +232,11 @@ export async function listCars(params: ListCarsParams = {}) {
             price_7_14_days,
             price_15_30_days,
             price_30_plus_days,
+            price_2_3_days,
+            price_4_6_days,
+            price_7_13_days,
+            price_14_21_days,
+            price_22_plus_days,
             deposit_amount,
             ownership_type,
             status,
@@ -270,6 +290,11 @@ export async function getCar(id: string) {
             price_7_14_days,
             price_15_30_days,
             price_30_plus_days,
+            price_2_3_days,
+            price_4_6_days,
+            price_7_13_days,
+            price_14_21_days,
+            price_22_plus_days,
             deposit_amount,
             ownership_type,
             status,
@@ -311,7 +336,11 @@ export async function createCar(input: CarInput) {
         price_7_14_days,
         price_15_30_days,
         price_30_plus_days,
-        deposit_amount,
+        price_2_3_days,
+        price_4_6_days,
+        price_7_13_days,
+        price_14_21_days,
+        price_22_plus_days,
         ownership_type,
         status,
         comment,
@@ -320,7 +349,7 @@ export async function createCar(input: CarInput) {
       ) VALUES (
         $1, $2, $3, $4, $5, $6, $7, $8, $9, $10,
         $11, $12, $13, $14, $15, $16, $17, $18, $19, $20,
-        $21, $22, $23, $24, now(), now()
+        $21, $22, $23, $24, $25, $26, $27, $28, now(), now()
       )
       RETURNING *`,
       [
@@ -344,7 +373,11 @@ export async function createCar(input: CarInput) {
         car.price_7_14_days,
         car.price_15_30_days,
         car.price_30_plus_days,
-        car.deposit_amount,
+        car.price_2_3_days,
+        car.price_4_6_days,
+        car.price_7_13_days,
+        car.price_14_21_days,
+        car.price_22_plus_days,
         car.ownership_type,
         car.status,
         car.comment,
@@ -383,12 +416,16 @@ export async function updateCar(id: string, input: CarInput) {
         price_7_14_days = $18,
         price_15_30_days = $19,
         price_30_plus_days = $20,
-        deposit_amount = $21,
-        ownership_type = $22,
-        status = $23,
-        comment = $24,
+        price_2_3_days = $21,
+        price_4_6_days = $22,
+        price_7_13_days = $23,
+        price_14_21_days = $24,
+        price_22_plus_days = $25,
+        ownership_type = $26,
+        status = $27,
+        comment = $28,
         updated_at = now()
-       WHERE id = $25
+       WHERE id = $29
        RETURNING *`,
       [
         car.name,
@@ -411,7 +448,11 @@ export async function updateCar(id: string, input: CarInput) {
         car.price_7_14_days,
         car.price_15_30_days,
         car.price_30_plus_days,
-        car.deposit_amount,
+        car.price_2_3_days,
+        car.price_4_6_days,
+        car.price_7_13_days,
+        car.price_14_21_days,
+        car.price_22_plus_days,
         car.ownership_type,
         car.status,
         car.comment,

@@ -37,6 +37,8 @@ export type RentalContractRow = {
   allowed_mileage?: number | null;
   deposit_amount?: string | null;
   discount_percent?: string | null;
+  rent_amount_before_discount?: string | null;
+  discount_amount?: string | null;
   rent_amount?: string | null;
   total_amount_with_deposit?: string | null;
 };
@@ -52,6 +54,7 @@ type ContractClientRow = {
   last_name: string;
   first_name: string;
   middle_name: string | null;
+  gender: string | null;
   phone: string | null;
   email: string | null;
   registration_address: string | null;
@@ -83,6 +86,11 @@ type ContractCarRow = {
   price_7_14_days: string | null;
   price_15_30_days: string | null;
   price_30_plus_days: string | null;
+  price_2_3_days: string | null;
+  price_4_6_days: string | null;
+  price_7_13_days: string | null;
+  price_14_21_days: string | null;
+  price_22_plus_days: string | null;
   deposit_amount: string | null;
 };
 
@@ -120,6 +128,36 @@ function signatureName(fullName: string) {
   return initials ? `${lastName} ${initials}` : lastName;
 }
 
+function clientGenderForms(gender: string | null | undefined) {
+  if (gender === "female") {
+    return {
+      client_named_as: "именуемая",
+      client_returned_as: "возвратившая",
+      client_received_as: "получившая",
+      client_obliged_as: "обязана",
+      client_familiarized_as: "ознакомлена",
+    };
+  }
+
+  if (gender === "male") {
+    return {
+      client_named_as: "именуемый",
+      client_returned_as: "возвративший",
+      client_received_as: "получивший",
+      client_obliged_as: "обязан",
+      client_familiarized_as: "ознакомлен",
+    };
+  }
+
+  return {
+    client_named_as: "именуемый(ая)",
+    client_returned_as: "возвративший(ая)",
+    client_received_as: "получивший(ая)",
+    client_obliged_as: "обязан(а)",
+    client_familiarized_as: "ознакомлен(а)",
+  };
+}
+
 function daysBetween(startDate: string, endDate: string) {
   const start = new Date(`${startDate}T00:00:00`);
   const end = new Date(`${endDate}T00:00:00`);
@@ -130,6 +168,10 @@ function daysBetween(startDate: string, endDate: string) {
 function formatMoney(value: number | null | undefined) {
   if (value === null || value === undefined || !Number.isFinite(value)) return "—";
   return `${Math.round(value).toLocaleString("ru-RU")} ₽`;
+}
+
+function formatPercent(value: number) {
+  return `${Number.isInteger(value) ? value : value.toLocaleString("ru-RU", { maximumFractionDigits: 2 })}%`;
 }
 
 function parseMoney(value: unknown, fallback: number | null) {
@@ -147,6 +189,10 @@ function parseInteger(value: unknown, fallback: number) {
 function parsePercent(value: unknown, fallback: number) {
   const parsed = parseMoney(value, fallback);
   return Math.min(Math.max(parsed ?? fallback, 0), 100);
+}
+
+function hasOwnValue<T extends object, K extends PropertyKey>(object: T | undefined, key: K) {
+  return Boolean(object && Object.prototype.hasOwnProperty.call(object, key));
 }
 
 const onesMale = ["", "один", "два", "три", "четыре", "пять", "шесть", "семь", "восемь", "девять"];
@@ -204,15 +250,15 @@ function rublesToWords(value: number | null | undefined) {
 
 function selectDailyPrice(car: ContractCarRow, days: number) {
   const raw =
-    days <= 2
-      ? car.price_1_2_days
+    days <= 3
+      ? car.price_2_3_days ?? car.price_1_2_days
       : days <= 6
-        ? car.price_3_6_days
-        : days <= 14
-          ? car.price_7_14_days
-          : days <= 30
-            ? car.price_15_30_days
-            : car.price_30_plus_days;
+        ? car.price_4_6_days ?? car.price_3_6_days
+        : days <= 13
+          ? car.price_7_13_days ?? car.price_7_14_days
+          : days <= 21
+            ? car.price_14_21_days ?? car.price_15_30_days
+            : car.price_22_plus_days ?? car.price_30_plus_days;
   const price = raw === null ? null : Number(raw);
   return Number.isFinite(price) ? price : null;
 }
@@ -222,6 +268,8 @@ async function ensureContractDocument(booking: ContractBookingRow, params?: {
   allowedMileage: number;
   depositAmount: number;
   discountPercent: number;
+  rentAmountBeforeDiscount: number | null;
+  discountAmount: number | null;
   rentAmount: number | null;
   totalAmountWithDeposit: number | null;
 }) {
@@ -258,10 +306,12 @@ async function ensureContractDocument(booking: ContractBookingRow, params?: {
        allowed_mileage,
        deposit_amount,
        discount_percent,
+       rent_amount_before_discount,
+       discount_amount,
        rent_amount,
        total_amount_with_deposit
      )
-     SELECT GREATEST(COALESCE(MAX(contract_number) + 1, 30), 30), $1::date, $2, $3, $4, $5, $6, $7, $8, $9, $10
+     SELECT GREATEST(COALESCE(MAX(contract_number) + 1, 30), 30), $1::date, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12
      FROM rental_contracts
      RETURNING id,
                contract_number,
@@ -278,6 +328,8 @@ async function ensureContractDocument(booking: ContractBookingRow, params?: {
                allowed_mileage,
                deposit_amount,
                discount_percent,
+               rent_amount_before_discount,
+               discount_amount,
                rent_amount,
                total_amount_with_deposit,
                created_at,
@@ -291,6 +343,8 @@ async function ensureContractDocument(booking: ContractBookingRow, params?: {
       params?.allowedMileage ?? null,
       params?.depositAmount ?? null,
       params?.discountPercent ?? null,
+      params?.rentAmountBeforeDiscount ?? null,
+      params?.discountAmount ?? null,
       params?.rentAmount ?? null,
       params?.totalAmountWithDeposit ?? null,
     ]
@@ -312,6 +366,8 @@ async function updateContractDocumentParams(contractId: string, params: {
   allowedMileage: number;
   depositAmount: number;
   discountPercent: number;
+  rentAmountBeforeDiscount: number | null;
+  discountAmount: number | null;
   rentAmount: number | null;
   totalAmountWithDeposit: number | null;
 }) {
@@ -321,14 +377,18 @@ async function updateContractDocumentParams(contractId: string, params: {
          allowed_mileage = $2,
          deposit_amount = $3,
          discount_percent = $4,
-         rent_amount = $5,
-         total_amount_with_deposit = $6
-     WHERE id = $7`,
+         rent_amount_before_discount = $5,
+         discount_amount = $6,
+         rent_amount = $7,
+         total_amount_with_deposit = $8
+     WHERE id = $9`,
     [
       params.dailyPrice,
       params.allowedMileage,
       params.depositAmount,
       params.discountPercent,
+      params.rentAmountBeforeDiscount,
+      params.discountAmount,
       params.rentAmount,
       params.totalAmountWithDeposit,
       contractId,
@@ -348,6 +408,8 @@ export async function listRentalContracts() {
             rc.allowed_mileage,
             rc.deposit_amount,
             rc.discount_percent,
+            rc.rent_amount_before_discount,
+            rc.discount_amount,
             rc.rent_amount,
             rc.total_amount_with_deposit,
             COALESCE(NULLIF(CONCAT_WS(' ', cl.last_name, cl.first_name, cl.middle_name), ''), b.client_name) AS client_name,
@@ -424,6 +486,8 @@ async function loadContractBase(bookingId: string) {
             allowed_mileage,
             deposit_amount,
             discount_percent,
+            rent_amount_before_discount,
+            discount_amount,
             rent_amount,
             total_amount_with_deposit,
             created_at,
@@ -444,10 +508,23 @@ function calculateContractParams(args: {
   overrides?: RentalContractParams;
   existingContract?: RentalContractRow | null;
 }) {
-  const dailyPrice = parseMoney(args.overrides?.daily_price, parseMoney(args.existingContract?.daily_price, args.defaultDailyPrice));
-  const allowedMileage = parseInteger(args.overrides?.allowed_mileage, parseInteger(args.existingContract?.allowed_mileage, 250));
-  const depositAmount = parseMoney(args.overrides?.deposit_amount, parseMoney(args.existingContract?.deposit_amount, args.defaultDepositAmount)) ?? args.defaultDepositAmount;
-  const discountPercent = parsePercent(args.overrides?.discount_percent, parsePercent(args.existingContract?.discount_percent, 0));
+  const dailyPrice = parseMoney(
+    hasOwnValue(args.overrides, "daily_price") ? args.overrides?.daily_price : args.existingContract?.daily_price,
+    args.defaultDailyPrice
+  );
+  const allowedMileage = parseInteger(
+    hasOwnValue(args.overrides, "allowed_mileage") ? args.overrides?.allowed_mileage : args.existingContract?.allowed_mileage,
+    250
+  );
+  const depositAmount =
+    parseMoney(
+      hasOwnValue(args.overrides, "deposit_amount") ? args.overrides?.deposit_amount : args.existingContract?.deposit_amount,
+      args.defaultDepositAmount
+    ) ?? args.defaultDepositAmount;
+  const discountPercent = parsePercent(
+    hasOwnValue(args.overrides, "discount_percent") ? args.overrides?.discount_percent : args.existingContract?.discount_percent,
+    0
+  );
   const rentAmountBeforeDiscount = dailyPrice === null ? null : dailyPrice * args.rentalDays;
   const discountAmount = rentAmountBeforeDiscount === null ? null : Math.round((rentAmountBeforeDiscount * discountPercent) / 100);
   const rentAmount = rentAmountBeforeDiscount === null ? null : rentAmountBeforeDiscount - (discountAmount ?? 0);
@@ -520,6 +597,10 @@ export async function generateRentalContract(bookingId: string, overrides?: Rent
   const clientEmail = client?.email?.trim() ?? "";
   const clientFullName = fullClientName(client, booking.client_name);
   const ownerFullName = dash(owner?.full_name);
+  const hasDiscount = calculated.discountPercent > 0;
+  const discountPercentText = hasDiscount ? formatPercent(calculated.discountPercent) : "-";
+  const discountAmountText = formatMoney(calculated.discountAmount ?? 0);
+  const genderForms = clientGenderForms(client?.gender);
 
   const data = {
     contract_number: String(contractDocument.contract_number),
@@ -536,6 +617,11 @@ export async function generateRentalContract(bookingId: string, overrides?: Rent
     owner_email: dash(owner?.email),
     client_full_name: clientFullName,
     client_signature_name: signatureName(clientFullName),
+    client_named_as: genderForms.client_named_as,
+    client_returned_as: genderForms.client_returned_as,
+    client_received_as: genderForms.client_received_as,
+    client_obliged_as: genderForms.client_obliged_as,
+    client_familiarized_as: genderForms.client_familiarized_as,
     client_inn: dash(client?.inn),
     client_passport: dash(client?.document_series_number),
     client_passport_issued_by: dash(client?.document_issued_by),
@@ -569,11 +655,11 @@ export async function generateRentalContract(bookingId: string, overrides?: Rent
     rental_days: String(rentalDays),
     daily_price: formatMoney(calculated.dailyPrice),
     allowed_mileage: String(calculated.allowedMileage),
-    discount_percent: calculated.discountPercent > 0 ? `${calculated.discountPercent}` : "",
-    discount_line: calculated.discountPercent > 0 ? `Скидка: ${calculated.discountPercent}% / ${formatMoney(calculated.discountAmount)}` : "",
+    discount_percent: discountPercentText,
+    discount_line: hasDiscount ? `${discountPercentText} — ${discountAmountText}` : "-",
     rent_amount_before_discount: formatMoney(calculated.rentAmountBeforeDiscount),
-    discount_amount: calculated.discountPercent > 0 ? formatMoney(calculated.discountAmount) : "",
-    discount_amount_words: calculated.discountPercent > 0 ? rublesToWords(calculated.discountAmount) : "",
+    discount_amount: hasDiscount ? discountAmountText : "0 ₽",
+    discount_amount_words: hasDiscount ? rublesToWords(calculated.discountAmount) : "ноль рублей 00 копеек",
     rent_amount: formatMoney(calculated.rentAmount),
     rent_amount_words: rublesToWords(calculated.rentAmount),
     deposit_amount: formatMoney(calculated.depositAmount),

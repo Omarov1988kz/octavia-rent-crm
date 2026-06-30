@@ -46,6 +46,16 @@ ALTER TABLE IF EXISTS cars
 ALTER TABLE IF EXISTS cars
   ADD COLUMN IF NOT EXISTS price_30_plus_days numeric(12, 2);
 ALTER TABLE IF EXISTS cars
+  ADD COLUMN IF NOT EXISTS price_2_3_days numeric(12, 2);
+ALTER TABLE IF EXISTS cars
+  ADD COLUMN IF NOT EXISTS price_4_6_days numeric(12, 2);
+ALTER TABLE IF EXISTS cars
+  ADD COLUMN IF NOT EXISTS price_7_13_days numeric(12, 2);
+ALTER TABLE IF EXISTS cars
+  ADD COLUMN IF NOT EXISTS price_14_21_days numeric(12, 2);
+ALTER TABLE IF EXISTS cars
+  ADD COLUMN IF NOT EXISTS price_22_plus_days numeric(12, 2);
+ALTER TABLE IF EXISTS cars
   ADD COLUMN IF NOT EXISTS deposit_amount numeric(12, 2);
 ALTER TABLE IF EXISTS cars
   ADD COLUMN IF NOT EXISTS ownership_type text NOT NULL DEFAULT 'own';
@@ -70,6 +80,13 @@ WHERE a.ctid < b.ctid
 CREATE UNIQUE INDEX IF NOT EXISTS cars_plate_number_unique_idx ON cars(plate_number);
 CREATE INDEX IF NOT EXISTS cars_status_idx ON cars(status);
 CREATE INDEX IF NOT EXISTS cars_ownership_type_idx ON cars(ownership_type);
+
+UPDATE cars
+SET price_2_3_days = COALESCE(price_2_3_days, price_1_2_days),
+    price_4_6_days = COALESCE(price_4_6_days, price_3_6_days),
+    price_7_13_days = COALESCE(price_7_13_days, price_7_14_days),
+    price_14_21_days = COALESCE(price_14_21_days, price_15_30_days),
+    price_22_plus_days = COALESCE(price_22_plus_days, price_30_plus_days);
 
 CREATE TABLE IF NOT EXISTS bookings (
   id uuid PRIMARY KEY DEFAULT uuid_generate_v4(),
@@ -240,6 +257,8 @@ CREATE TABLE IF NOT EXISTS rental_contracts (
   allowed_mileage integer,
   deposit_amount numeric(12, 2),
   discount_percent numeric(5, 2),
+  rent_amount_before_discount numeric(12, 2),
+  discount_amount numeric(12, 2),
   rent_amount numeric(12, 2),
   total_amount_with_deposit numeric(12, 2),
   created_at timestamptz NOT NULL DEFAULT now(),
