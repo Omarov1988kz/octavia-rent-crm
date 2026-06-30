@@ -18,6 +18,7 @@ export interface ClientRow {
   document_series_number: string | null;
   document_issued_by: string | null;
   document_issued_date: string | null;
+  passport_department_code: string | null;
   document_expiry_date: string | null;
   driver_license_number: string | null;
   driver_license_issued_date: string | null;
@@ -52,6 +53,7 @@ export interface ClientInput {
   document_series_number?: string;
   document_issued_by?: string;
   document_issued_date?: string;
+  passport_department_code?: string;
   document_expiry_date?: string;
   driver_license_number?: string;
   driver_license_issued_date?: string;
@@ -181,6 +183,7 @@ export async function createClient(input: ClientInput) {
       document_series_number,
       document_issued_by,
       document_issued_date,
+      passport_department_code,
       document_expiry_date,
       driver_license_number,
       driver_license_issued_date,
@@ -200,7 +203,7 @@ export async function createClient(input: ClientInput) {
     ) VALUES (
       $1, $2, $3, $4, $5, $6, $7, $8, $9, $10,
       $11, $12, $13, $14, $15, $16, $17, $18, $19, $20,
-      $21, $22, $23, $24, $25, $26, $27, $28, $29
+      $21, $22, $23, $24, $25, $26, $27, $28, $29, $30
     ) RETURNING *`,
     [
       input.last_name.trim(),
@@ -216,6 +219,7 @@ export async function createClient(input: ClientInput) {
       normalizeOptionalString(input.document_series_number),
       normalizeOptionalString(input.document_issued_by),
       normalizeOptionalDate(input.document_issued_date),
+      normalizeOptionalString(input.passport_department_code),
       normalizeOptionalDate(input.document_expiry_date),
       normalizeOptionalString(input.driver_license_number),
       normalizeOptionalDate(input.driver_license_issued_date),
@@ -260,24 +264,25 @@ export async function updateClient(id: string, input: ClientInput) {
       document_series_number = $11,
       document_issued_by = $12,
       document_issued_date = $13,
-      document_expiry_date = $14,
-      driver_license_number = $15,
-      driver_license_issued_date = $16,
-      driver_license_expiry_date = $17,
-      driver_license_categories = $18,
-      driver_license_country = $19,
-      kbm = $20,
-      inn = $21,
-      client_registration_date = $22,
-      client_status = $23,
-      preferences = $24,
-      comments = $25,
-      social_links = $26,
-      acquisition_source = $27,
-      is_blacklisted = $28,
-      blacklist_reason = $29,
+      passport_department_code = $14,
+      document_expiry_date = $15,
+      driver_license_number = $16,
+      driver_license_issued_date = $17,
+      driver_license_expiry_date = $18,
+      driver_license_categories = $19,
+      driver_license_country = $20,
+      kbm = $21,
+      inn = $22,
+      client_registration_date = $23,
+      client_status = $24,
+      preferences = $25,
+      comments = $26,
+      social_links = $27,
+      acquisition_source = $28,
+      is_blacklisted = $29,
+      blacklist_reason = $30,
       updated_at = now()
-    WHERE id = $30
+    WHERE id = $31
     RETURNING *`,
     [
       input.last_name.trim(),
@@ -293,6 +298,7 @@ export async function updateClient(id: string, input: ClientInput) {
       normalizeOptionalString(input.document_series_number),
       normalizeOptionalString(input.document_issued_by),
       normalizeOptionalDate(input.document_issued_date),
+      normalizeOptionalString(input.passport_department_code),
       normalizeOptionalDate(input.document_expiry_date),
       normalizeOptionalString(input.driver_license_number),
       normalizeOptionalDate(input.driver_license_issued_date),

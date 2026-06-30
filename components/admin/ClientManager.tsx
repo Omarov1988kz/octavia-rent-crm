@@ -22,6 +22,7 @@ type Client = {
   document_series_number?: string | null;
   document_issued_by?: string | null;
   document_issued_date?: string | null;
+  passport_department_code?: string | null;
   document_expiry_date?: string | null;
   driver_license_number?: string | null;
   driver_license_issued_date?: string | null;
@@ -72,6 +73,7 @@ type ClientForm = {
   document_series_number: string;
   document_issued_by: string;
   document_issued_date: string;
+  passport_department_code: string;
   document_expiry_date: string;
   driver_license_number: string;
   driver_license_issued_date: string;
@@ -106,6 +108,7 @@ const initialForm: ClientForm = {
   document_series_number: "",
   document_issued_by: "",
   document_issued_date: "",
+  passport_department_code: "",
   document_expiry_date: "",
   driver_license_number: "",
   driver_license_issued_date: "",
@@ -218,6 +221,7 @@ function clientToForm(client: Client): ClientForm {
     document_series_number: client.document_series_number ?? "",
     document_issued_by: client.document_issued_by ?? "",
     document_issued_date: client.document_issued_date ?? "",
+    passport_department_code: client.passport_department_code ?? "",
     document_expiry_date: client.document_expiry_date ?? "",
     driver_license_number: client.driver_license_number ?? "",
     driver_license_issued_date: client.driver_license_issued_date ?? "",
@@ -540,6 +544,7 @@ export default function ClientManager() {
                 <label className="admin-label">Серия и номер<input className="admin-input" value={form.document_series_number} onChange={(event) => setForm({ ...form, document_series_number: event.target.value })} /></label>
                 <label className="admin-label">Кем выдан<input className="admin-input" value={form.document_issued_by} onChange={(event) => setForm({ ...form, document_issued_by: event.target.value })} /></label>
                 <label className="admin-label">Дата выдачи<input className="admin-input" type="date" value={form.document_issued_date} onChange={(event) => setForm({ ...form, document_issued_date: event.target.value })} /></label>
+                <label className="admin-label">Код подразделения<input className="admin-input" placeholder="123-456" value={form.passport_department_code} onChange={(event) => setForm({ ...form, passport_department_code: event.target.value })} /></label>
                 <label className="admin-label">Дата окончания<input className="admin-input" type="date" value={form.document_expiry_date} onChange={(event) => setForm({ ...form, document_expiry_date: event.target.value })} /></label>
               </div>
             </details>
@@ -707,6 +712,7 @@ export default function ClientManager() {
                     <InfoItem label="Серия и номер" value={selectedClient.document_series_number} />
                     <InfoItem label="Кем выдан" value={selectedClient.document_issued_by} />
                     <InfoItem label="Дата выдачи" value={formatDate(selectedClient.document_issued_date)} />
+                    <InfoItem label="Код подразделения" value={selectedClient.passport_department_code} />
                     <InfoItem label="Дата окончания" value={formatDate(selectedClient.document_expiry_date)} />
                   </div>
                 </section>

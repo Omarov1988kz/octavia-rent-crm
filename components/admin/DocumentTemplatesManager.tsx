@@ -16,6 +16,7 @@ const variables = [
   "contract_number",
   "contract_date",
   "owner_full_name",
+  "owner_signature_name",
   "owner_inn",
   "owner_passport",
   "owner_passport_issued_by",
@@ -25,17 +26,21 @@ const variables = [
   "owner_phone",
   "owner_email",
   "client_full_name",
+  "client_signature_name",
   "client_inn",
   "client_passport",
   "client_passport_issued_by",
   "client_passport_issued_date",
+  "client_passport_department_code",
   "client_registration_address",
   "client_phone",
   "client_email",
+  "client_email_line",
   "client_driver_license_number",
   "client_driver_license_issued_date",
   "client_driver_license_expiry_date",
   "client_driver_license_categories",
+  "client_driver_license_country",
   "car_name",
   "car_brand",
   "car_model",
@@ -45,14 +50,20 @@ const variables = [
   "car_color",
   "car_registration_certificate",
   "car_fuel_type",
+  "car_class",
   "rental_start_date",
   "rental_start_time",
   "rental_end_date",
   "rental_end_time",
+  "rental_period",
+  "rental_term",
   "rental_days",
   "daily_price",
   "rent_amount",
+  "rent_amount_words",
   "deposit_amount",
+  "deposit_amount_words",
+  "allowed_mileage",
   "total_amount",
 ];
 
@@ -153,6 +164,15 @@ export default function DocumentTemplatesManager() {
             Заменить шаблон
           </button>
         </form>
+      </section>
+
+      <section className="admin-card">
+        <h2 className="admin-form-section-title">Как редактировать шаблон</h2>
+        <div className="admin-muted" style={{ display: "grid", gap: 8 }}>
+          <div>Откройте DOCX в Word или LibreOffice и замените изменяемые данные на переменные вида {"{{client_full_name}}"}.</div>
+          <div>Фигурные скобки должны остаться обычным текстом внутри документа. Не вставляйте переменные как изображения или поля Word.</div>
+          <div>После сохранения загрузите файл через кнопку “Заменить шаблон”.</div>
+        </div>
       </section>
 
       <section className="admin-card">

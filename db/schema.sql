@@ -32,6 +32,22 @@ ALTER TABLE IF EXISTS cars
 ALTER TABLE IF EXISTS cars
   ADD COLUMN IF NOT EXISTS mileage integer;
 ALTER TABLE IF EXISTS cars
+  ADD COLUMN IF NOT EXISTS car_class text;
+ALTER TABLE IF EXISTS cars
+  ADD COLUMN IF NOT EXISTS registration_certificate text;
+ALTER TABLE IF EXISTS cars
+  ADD COLUMN IF NOT EXISTS price_1_2_days numeric(12, 2);
+ALTER TABLE IF EXISTS cars
+  ADD COLUMN IF NOT EXISTS price_3_6_days numeric(12, 2);
+ALTER TABLE IF EXISTS cars
+  ADD COLUMN IF NOT EXISTS price_7_14_days numeric(12, 2);
+ALTER TABLE IF EXISTS cars
+  ADD COLUMN IF NOT EXISTS price_15_30_days numeric(12, 2);
+ALTER TABLE IF EXISTS cars
+  ADD COLUMN IF NOT EXISTS price_30_plus_days numeric(12, 2);
+ALTER TABLE IF EXISTS cars
+  ADD COLUMN IF NOT EXISTS deposit_amount numeric(12, 2);
+ALTER TABLE IF EXISTS cars
   ADD COLUMN IF NOT EXISTS ownership_type text NOT NULL DEFAULT 'own';
 ALTER TABLE IF EXISTS cars
   ADD COLUMN IF NOT EXISTS status text NOT NULL DEFAULT 'active';
@@ -168,6 +184,8 @@ ALTER TABLE IF EXISTS clients
 ALTER TABLE IF EXISTS clients
   ADD COLUMN IF NOT EXISTS document_issued_date date;
 ALTER TABLE IF EXISTS clients
+  ADD COLUMN IF NOT EXISTS passport_department_code text;
+ALTER TABLE IF EXISTS clients
   ADD COLUMN IF NOT EXISTS document_expiry_date date;
 ALTER TABLE IF EXISTS clients
   ADD COLUMN IF NOT EXISTS driver_license_number text;
@@ -210,6 +228,23 @@ ALTER TABLE IF EXISTS bookings
   ADD COLUMN IF NOT EXISTS contract_number text;
 ALTER TABLE IF EXISTS bookings
   ADD COLUMN IF NOT EXISTS contract_date date;
+
+CREATE TABLE IF NOT EXISTS rental_contracts (
+  id uuid PRIMARY KEY DEFAULT gen_random_uuid(),
+  contract_number integer NOT NULL UNIQUE,
+  contract_date date NOT NULL,
+  booking_id uuid REFERENCES bookings(id) ON DELETE SET NULL,
+  client_id uuid REFERENCES clients(id) ON DELETE SET NULL,
+  car_id uuid REFERENCES cars(id) ON DELETE SET NULL,
+  created_at timestamptz NOT NULL DEFAULT now(),
+  deleted_at timestamptz
+);
+
+CREATE UNIQUE INDEX IF NOT EXISTS rental_contracts_active_booking_unique_idx
+  ON rental_contracts(booking_id)
+  WHERE booking_id IS NOT NULL AND deleted_at IS NULL;
+CREATE INDEX IF NOT EXISTS rental_contracts_deleted_at_idx ON rental_contracts(deleted_at);
+CREATE INDEX IF NOT EXISTS rental_contracts_created_at_idx ON rental_contracts(created_at);
 
 CREATE INDEX IF NOT EXISTS clients_last_name_idx ON clients(last_name);
 CREATE INDEX IF NOT EXISTS clients_phone_idx ON clients(phone);

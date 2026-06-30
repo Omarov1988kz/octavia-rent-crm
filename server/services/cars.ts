@@ -18,6 +18,14 @@ export interface CarRow {
   engine: string | null;
   fuel_type: string | null;
   mileage: number | null;
+  car_class: string | null;
+  registration_certificate: string | null;
+  price_1_2_days: string | null;
+  price_3_6_days: string | null;
+  price_7_14_days: string | null;
+  price_15_30_days: string | null;
+  price_30_plus_days: string | null;
+  deposit_amount: string | null;
   ownership_type: CarOwnershipType;
   status: CarStatus;
   comment: string | null;
@@ -45,6 +53,14 @@ export interface CarInput {
   engine?: string | null;
   fuel_type?: string | null;
   mileage?: number | string | null;
+  car_class?: string | null;
+  registration_certificate?: string | null;
+  price_1_2_days?: number | string | null;
+  price_3_6_days?: number | string | null;
+  price_7_14_days?: number | string | null;
+  price_15_30_days?: number | string | null;
+  price_30_plus_days?: number | string | null;
+  deposit_amount?: number | string | null;
   ownership_type?: CarOwnershipType | null;
   status?: CarStatus | null;
   comment?: string | null;
@@ -60,6 +76,14 @@ function normalizeInteger(value: unknown) {
   }
   const parsed = typeof value === "number" ? value : Number(value);
   return Number.isInteger(parsed) ? parsed : null;
+}
+
+function normalizeMoney(value: unknown) {
+  if (value === null || value === undefined || value === "") {
+    return null;
+  }
+  const parsed = typeof value === "number" ? value : Number(String(value).replace(",", "."));
+  return Number.isFinite(parsed) && parsed >= 0 ? parsed : null;
 }
 
 function sanitizeOwnershipType(value: unknown): CarOwnershipType {
@@ -96,6 +120,14 @@ function normalizeCarInput(input: CarInput) {
     engine: normalizeOptionalString(input.engine),
     fuel_type: normalizeOptionalString(input.fuel_type),
     mileage: normalizeInteger(input.mileage),
+    car_class: normalizeOptionalString(input.car_class),
+    registration_certificate: normalizeOptionalString(input.registration_certificate),
+    price_1_2_days: normalizeMoney(input.price_1_2_days),
+    price_3_6_days: normalizeMoney(input.price_3_6_days),
+    price_7_14_days: normalizeMoney(input.price_7_14_days),
+    price_15_30_days: normalizeMoney(input.price_15_30_days),
+    price_30_plus_days: normalizeMoney(input.price_30_plus_days),
+    deposit_amount: normalizeMoney(input.deposit_amount),
     ownership_type: sanitizeOwnershipType(input.ownership_type),
     status,
     is_active: status === "active",
@@ -178,6 +210,14 @@ export async function listCars(params: ListCarsParams = {}) {
             engine,
             fuel_type,
             mileage,
+            car_class,
+            registration_certificate,
+            price_1_2_days,
+            price_3_6_days,
+            price_7_14_days,
+            price_15_30_days,
+            price_30_plus_days,
+            deposit_amount,
             ownership_type,
             status,
             comment,
@@ -223,6 +263,14 @@ export async function getCar(id: string) {
             engine,
             fuel_type,
             mileage,
+            car_class,
+            registration_certificate,
+            price_1_2_days,
+            price_3_6_days,
+            price_7_14_days,
+            price_15_30_days,
+            price_30_plus_days,
+            deposit_amount,
             ownership_type,
             status,
             comment,
@@ -256,6 +304,14 @@ export async function createCar(input: CarInput) {
         engine,
         fuel_type,
         mileage,
+        car_class,
+        registration_certificate,
+        price_1_2_days,
+        price_3_6_days,
+        price_7_14_days,
+        price_15_30_days,
+        price_30_plus_days,
+        deposit_amount,
         ownership_type,
         status,
         comment,
@@ -263,7 +319,8 @@ export async function createCar(input: CarInput) {
         updated_at
       ) VALUES (
         $1, $2, $3, $4, $5, $6, $7, $8, $9, $10,
-        $11, $12, $13, $14, $15, $16, now(), now()
+        $11, $12, $13, $14, $15, $16, $17, $18, $19, $20,
+        $21, $22, $23, $24, now(), now()
       )
       RETURNING *`,
       [
@@ -280,6 +337,14 @@ export async function createCar(input: CarInput) {
         car.engine,
         car.fuel_type,
         car.mileage,
+        car.car_class,
+        car.registration_certificate,
+        car.price_1_2_days,
+        car.price_3_6_days,
+        car.price_7_14_days,
+        car.price_15_30_days,
+        car.price_30_plus_days,
+        car.deposit_amount,
         car.ownership_type,
         car.status,
         car.comment,
@@ -311,11 +376,19 @@ export async function updateCar(id: string, input: CarInput) {
         engine = $11,
         fuel_type = $12,
         mileage = $13,
-        ownership_type = $14,
-        status = $15,
-        comment = $16,
+        car_class = $14,
+        registration_certificate = $15,
+        price_1_2_days = $16,
+        price_3_6_days = $17,
+        price_7_14_days = $18,
+        price_15_30_days = $19,
+        price_30_plus_days = $20,
+        deposit_amount = $21,
+        ownership_type = $22,
+        status = $23,
+        comment = $24,
         updated_at = now()
-       WHERE id = $17
+       WHERE id = $25
        RETURNING *`,
       [
         car.name,
@@ -331,6 +404,14 @@ export async function updateCar(id: string, input: CarInput) {
         car.engine,
         car.fuel_type,
         car.mileage,
+        car.car_class,
+        car.registration_certificate,
+        car.price_1_2_days,
+        car.price_3_6_days,
+        car.price_7_14_days,
+        car.price_15_30_days,
+        car.price_30_plus_days,
+        car.deposit_amount,
         car.ownership_type,
         car.status,
         car.comment,

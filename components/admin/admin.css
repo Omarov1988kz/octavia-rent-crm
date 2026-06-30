@@ -181,6 +181,11 @@
   border-collapse: collapse;
 }
 
+.admin-table-wrap {
+  width: 100%;
+  overflow-x: auto;
+}
+
 .admin-table th,
 .admin-table td {
   text-align: left;

@@ -21,6 +21,14 @@ type Car = {
   engine: string | null;
   fuel_type: string | null;
   mileage: number | null;
+  car_class: string | null;
+  registration_certificate: string | null;
+  price_1_2_days: string | null;
+  price_3_6_days: string | null;
+  price_7_14_days: string | null;
+  price_15_30_days: string | null;
+  price_30_plus_days: string | null;
+  deposit_amount: string | null;
   ownership_type: CarOwnershipType;
   status: CarStatus;
   comment: string | null;
@@ -39,6 +47,14 @@ type CarForm = {
   engine: string;
   fuel_type: string;
   mileage: string;
+  car_class: string;
+  registration_certificate: string;
+  price_1_2_days: string;
+  price_3_6_days: string;
+  price_7_14_days: string;
+  price_15_30_days: string;
+  price_30_plus_days: string;
+  deposit_amount: string;
   ownership_type: CarOwnershipType;
   status: CarStatus;
   comment: string;
@@ -57,6 +73,14 @@ const initialForm: CarForm = {
   engine: "",
   fuel_type: "",
   mileage: "",
+  car_class: "",
+  registration_certificate: "",
+  price_1_2_days: "",
+  price_3_6_days: "",
+  price_7_14_days: "",
+  price_15_30_days: "",
+  price_30_plus_days: "",
+  deposit_amount: "",
   ownership_type: "own",
   status: "active",
   comment: "",
@@ -124,6 +148,14 @@ function carToForm(car: Car): CarForm {
     engine: car.engine ?? "",
     fuel_type: car.fuel_type ?? "",
     mileage: car.mileage ? String(car.mileage) : "",
+    car_class: car.car_class ?? "",
+    registration_certificate: car.registration_certificate ?? "",
+    price_1_2_days: car.price_1_2_days ?? "",
+    price_3_6_days: car.price_3_6_days ?? "",
+    price_7_14_days: car.price_7_14_days ?? "",
+    price_15_30_days: car.price_15_30_days ?? "",
+    price_30_plus_days: car.price_30_plus_days ?? "",
+    deposit_amount: car.deposit_amount ?? "",
     ownership_type: car.ownership_type,
     status: car.status,
     comment: car.comment ?? "",
@@ -136,6 +168,14 @@ function buildPayload(form: CarForm) {
     year: form.year.trim() ? Number(form.year) : null,
     mileage: form.mileage.trim() ? Number(form.mileage) : null,
     plate_number: form.plate_number.trim() || null,
+    car_class: form.car_class.trim() || null,
+    registration_certificate: form.registration_certificate.trim() || null,
+    price_1_2_days: form.price_1_2_days.trim() ? Number(form.price_1_2_days.replace(",", ".")) : null,
+    price_3_6_days: form.price_3_6_days.trim() ? Number(form.price_3_6_days.replace(",", ".")) : null,
+    price_7_14_days: form.price_7_14_days.trim() ? Number(form.price_7_14_days.replace(",", ".")) : null,
+    price_15_30_days: form.price_15_30_days.trim() ? Number(form.price_15_30_days.replace(",", ".")) : null,
+    price_30_plus_days: form.price_30_plus_days.trim() ? Number(form.price_30_plus_days.replace(",", ".")) : null,
+    deposit_amount: form.deposit_amount.trim() ? Number(form.deposit_amount.replace(",", ".")) : null,
   };
 }
 
@@ -365,6 +405,21 @@ export default function CarManager() {
                   <input className="admin-input" value={form.vin} onChange={(event) => setForm({ ...form, vin: event.target.value })} />
                 </label>
                 <label className="admin-label">
+                  Класс автомобиля
+                  <input className="admin-input" list="car-class-options" value={form.car_class} onChange={(event) => setForm({ ...form, car_class: event.target.value })} />
+                  <datalist id="car-class-options">
+                    <option value="эконом" />
+                    <option value="комфорт" />
+                    <option value="бизнес" />
+                    <option value="люкс" />
+                    <option value="SUV" />
+                  </datalist>
+                </label>
+                <label className="admin-label">
+                  Свидетельство о регистрации
+                  <input className="admin-input" placeholder="2354 456356" value={form.registration_certificate} onChange={(event) => setForm({ ...form, registration_certificate: event.target.value })} />
+                </label>
+                <label className="admin-label">
                   Цвет
                   <input className="admin-input" value={form.color} onChange={(event) => setForm({ ...form, color: event.target.value })} />
                 </label>
@@ -372,6 +427,18 @@ export default function CarManager() {
                   Кузов
                   <input className="admin-input" value={form.body_type} onChange={(event) => setForm({ ...form, body_type: event.target.value })} />
                 </label>
+              </div>
+            </div>
+
+            <div className="admin-form-section">
+              <h3 className="admin-form-section-title">Цены по срокам аренды</h3>
+              <div className="admin-grid-4">
+                <label className="admin-label">1-2 дня<input className="admin-input" type="number" min="0" step="1" value={form.price_1_2_days} onChange={(event) => setForm({ ...form, price_1_2_days: event.target.value })} /></label>
+                <label className="admin-label">3-6 дней<input className="admin-input" type="number" min="0" step="1" value={form.price_3_6_days} onChange={(event) => setForm({ ...form, price_3_6_days: event.target.value })} /></label>
+                <label className="admin-label">7-14 дней<input className="admin-input" type="number" min="0" step="1" value={form.price_7_14_days} onChange={(event) => setForm({ ...form, price_7_14_days: event.target.value })} /></label>
+                <label className="admin-label">15-30 дней<input className="admin-input" type="number" min="0" step="1" value={form.price_15_30_days} onChange={(event) => setForm({ ...form, price_15_30_days: event.target.value })} /></label>
+                <label className="admin-label">31+ дней<input className="admin-input" type="number" min="0" step="1" value={form.price_30_plus_days} onChange={(event) => setForm({ ...form, price_30_plus_days: event.target.value })} /></label>
+                <label className="admin-label">Залог<input className="admin-input" type="number" min="0" step="1" value={form.deposit_amount} onChange={(event) => setForm({ ...form, deposit_amount: event.target.value })} /></label>
               </div>
             </div>
 
@@ -481,8 +548,30 @@ export default function CarManager() {
                     {emptyToDash(car.year)}
                   </div>
                   <div className="admin-field">
+                    <span>Класс</span>
+                    {emptyToDash(car.car_class)}
+                  </div>
+                  <div className="admin-field">
+                    <span>Свидетельство о регистрации</span>
+                    {emptyToDash(car.registration_certificate)}
+                  </div>
+                  <div className="admin-field">
                     <span>Пробег</span>
                     {car.mileage === null ? "—" : `${car.mileage.toLocaleString("ru-RU")} км`}
+                  </div>
+                  <div className="admin-field">
+                    <span>Тарифы</span>
+                    {[
+                      car.price_1_2_days ? `1-2: ${Number(car.price_1_2_days).toLocaleString("ru-RU")} ₽` : null,
+                      car.price_3_6_days ? `3-6: ${Number(car.price_3_6_days).toLocaleString("ru-RU")} ₽` : null,
+                      car.price_7_14_days ? `7-14: ${Number(car.price_7_14_days).toLocaleString("ru-RU")} ₽` : null,
+                      car.price_15_30_days ? `15-30: ${Number(car.price_15_30_days).toLocaleString("ru-RU")} ₽` : null,
+                      car.price_30_plus_days ? `31+: ${Number(car.price_30_plus_days).toLocaleString("ru-RU")} ₽` : null,
+                    ].filter(Boolean).join("; ") || "—"}
+                  </div>
+                  <div className="admin-field">
+                    <span>Залог</span>
+                    {car.deposit_amount ? `${Number(car.deposit_amount).toLocaleString("ru-RU")} ₽` : "—"}
                   </div>
                   <div className="admin-field">
                     <span>Комментарий</span>

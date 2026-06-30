@@ -35,6 +35,7 @@ export const rentalContractVariables = [
   "client_passport",
   "client_passport_issued_by",
   "client_passport_issued_date",
+  "client_passport_department_code",
   "client_registration_address",
   "client_phone",
   "client_email",
@@ -42,6 +43,7 @@ export const rentalContractVariables = [
   "client_driver_license_issued_date",
   "client_driver_license_expiry_date",
   "client_driver_license_categories",
+  "client_driver_license_country",
   "car_name",
   "car_brand",
   "car_model",
@@ -51,6 +53,7 @@ export const rentalContractVariables = [
   "car_color",
   "car_registration_certificate",
   "car_fuel_type",
+  "car_class",
   "rental_start_date",
   "rental_start_time",
   "rental_end_date",
@@ -58,9 +61,21 @@ export const rentalContractVariables = [
   "rental_days",
   "daily_price",
   "rent_amount",
+  "rent_amount_words",
   "deposit_amount",
+  "deposit_amount_words",
+  "allowed_mileage",
   "total_amount",
 ];
+
+export function hasTemplatePlaceholders(buffer: Buffer) {
+  const zip = new PizZip(buffer);
+  return Object.keys(zip.files).some((fileName) => {
+    if (!fileName.startsWith("word/") || !fileName.endsWith(".xml")) return false;
+    const file = zip.file(fileName);
+    return Boolean(file?.asText().match(/{{\s*[\w.]+\s*}}/));
+  });
+}
 
 function contentTypesXml() {
   return `<?xml version="1.0" encoding="UTF-8" standalone="yes"?>
@@ -82,11 +97,11 @@ function documentXml() {
   const lines = [
     "Договор аренды автомобиля без экипажа № {{contract_number}} от {{contract_date}}",
     "Арендодатель: {{owner_full_name}}, ИНН {{owner_inn}}, паспорт {{owner_passport}}, выдан {{owner_passport_issued_by}} {{owner_passport_issued_date}}, код подразделения {{owner_passport_department_code}}, адрес {{owner_registration_address}}, телефон {{owner_phone}}, email {{owner_email}}.",
-    "Арендатор: {{client_full_name}}, ИНН {{client_inn}}, паспорт {{client_passport}}, выдан {{client_passport_issued_by}} {{client_passport_issued_date}}, адрес {{client_registration_address}}, телефон {{client_phone}}, email {{client_email}}.",
-    "Водительское удостоверение: {{client_driver_license_number}}, выдано {{client_driver_license_issued_date}}, действительно до {{client_driver_license_expiry_date}}, категории {{client_driver_license_categories}}.",
-    "Автомобиль: {{car_name}}, {{car_brand}} {{car_model}} {{car_year}}, VIN {{car_vin}}, госномер {{car_plate_number}}, цвет {{car_color}}, СТС {{car_registration_certificate}}, топливо {{car_fuel_type}}.",
+    "Арендатор: {{client_full_name}}, ИНН {{client_inn}}, паспорт {{client_passport}}, выдан {{client_passport_issued_by}} {{client_passport_issued_date}}, код подразделения {{client_passport_department_code}}, адрес {{client_registration_address}}, телефон {{client_phone}}, email {{client_email}}.",
+    "Водительское удостоверение: {{client_driver_license_number}}, выдано {{client_driver_license_issued_date}}, действительно до {{client_driver_license_expiry_date}}, категории {{client_driver_license_categories}}, страна выдачи {{client_driver_license_country}}.",
+    "Автомобиль: {{car_name}}, {{car_brand}} {{car_model}} {{car_year}}, класс {{car_class}}, VIN {{car_vin}}, госномер {{car_plate_number}}, цвет {{car_color}}, СТС {{car_registration_certificate}}, топливо {{car_fuel_type}}.",
     "Период аренды: с {{rental_start_date}} {{rental_start_time}} до {{rental_end_date}} {{rental_end_time}}, дней: {{rental_days}}.",
-    "Стоимость: {{daily_price}} в сутки, аренда {{rent_amount}}, депозит {{deposit_amount}}, итого {{total_amount}}.",
+    "Стоимость: {{daily_price}} в сутки, аренда {{rent_amount}} ({{rent_amount_words}}), депозит {{deposit_amount}} ({{deposit_amount_words}}), лимит пробега {{allowed_mileage}}, итого {{total_amount}}.",
   ];
 
   const body = lines
@@ -182,6 +197,10 @@ export async function replaceRentalContractTemplate(fileName: string, fileBuffer
   }
 
   await ensureTemplatesDir();
+  if (!hasTemplatePlaceholders(fileBuffer)) {
+    throw new Error("В шаблоне договора не найдены переменные для подстановки. Загрузите DOCX-шаблон с плейсхолдерами.");
+  }
+
   const safeName = `rental-contract-template-${Date.now()}.docx`;
   const filePath = path.join(templateRoot, safeName);
   await fs.writeFile(filePath, fileBuffer);

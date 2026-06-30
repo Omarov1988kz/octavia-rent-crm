@@ -7,6 +7,17 @@ export const dynamic = "force-dynamic";
 const publicSyncUrl = process.env.PUBLIC_SYNC_URL;
 const syncToken = process.env.SYNC_API_TOKEN;
 
+function normalizeTimeForSync(value: string | null | undefined) {
+  if (!value) return value;
+
+  if (/^\d{2}:\d{2}$/.test(value)) {
+    return value;
+  }
+
+  const match = value.match(/^(\d{2}:\d{2}):\d{2}$/);
+  return match ? match[1] : value;
+}
+
 export async function POST() {
   if (!publicSyncUrl) {
     return NextResponse.json({ message: "PUBLIC_SYNC_URL is not configured" }, { status: 500 });
@@ -35,9 +46,9 @@ export async function POST() {
       externalId: booking.id,
       carKey: "octavia",
       startDate: booking.start_date,
-      startTime: booking.start_time,
+      startTime: normalizeTimeForSync(booking.start_time),
       endDate: booking.end_date,
-      endTime: booking.end_time,
+      endTime: normalizeTimeForSync(booking.end_time),
       status: booking.status,
     })),
   };
