@@ -236,6 +236,12 @@ CREATE TABLE IF NOT EXISTS rental_contracts (
   booking_id uuid REFERENCES bookings(id) ON DELETE SET NULL,
   client_id uuid REFERENCES clients(id) ON DELETE SET NULL,
   car_id uuid REFERENCES cars(id) ON DELETE SET NULL,
+  daily_price numeric(12, 2),
+  allowed_mileage integer,
+  deposit_amount numeric(12, 2),
+  discount_percent numeric(5, 2),
+  rent_amount numeric(12, 2),
+  total_amount_with_deposit numeric(12, 2),
   created_at timestamptz NOT NULL DEFAULT now(),
   deleted_at timestamptz
 );
@@ -245,6 +251,23 @@ CREATE UNIQUE INDEX IF NOT EXISTS rental_contracts_active_booking_unique_idx
   WHERE booking_id IS NOT NULL AND deleted_at IS NULL;
 CREATE INDEX IF NOT EXISTS rental_contracts_deleted_at_idx ON rental_contracts(deleted_at);
 CREATE INDEX IF NOT EXISTS rental_contracts_created_at_idx ON rental_contracts(created_at);
+
+CREATE TABLE IF NOT EXISTS car_class_deposits (
+  id uuid PRIMARY KEY DEFAULT gen_random_uuid(),
+  car_class text NOT NULL UNIQUE,
+  deposit_amount integer NOT NULL DEFAULT 10000,
+  created_at timestamptz NOT NULL DEFAULT now(),
+  updated_at timestamptz NOT NULL DEFAULT now()
+);
+
+INSERT INTO car_class_deposits (car_class, deposit_amount)
+VALUES
+  ('эконом', 10000),
+  ('комфорт', 10000),
+  ('бизнес', 10000),
+  ('люкс', 10000),
+  ('SUV', 10000)
+ON CONFLICT (car_class) DO NOTHING;
 
 CREATE INDEX IF NOT EXISTS clients_last_name_idx ON clients(last_name);
 CREATE INDEX IF NOT EXISTS clients_phone_idx ON clients(phone);

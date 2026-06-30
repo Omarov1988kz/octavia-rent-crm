@@ -2,6 +2,7 @@ import Docxtemplater from "docxtemplater";
 import PizZip from "pizzip";
 import { query } from "@/server/db";
 import { hasTemplatePlaceholders, readTemplateFile } from "@/server/services/documentTemplates";
+import { getDepositAmountForClass } from "@/server/services/deposits";
 import { getOwnerSettings, isOwnerSettingsComplete } from "@/server/services/ownerSettings";
 
 type ContractBookingRow = {
@@ -32,6 +33,19 @@ export type RentalContractRow = {
   end_date: string | null;
   created_at: string;
   deleted_at: string | null;
+  daily_price?: string | null;
+  allowed_mileage?: number | null;
+  deposit_amount?: string | null;
+  discount_percent?: string | null;
+  rent_amount?: string | null;
+  total_amount_with_deposit?: string | null;
+};
+
+export type RentalContractParams = {
+  daily_price?: number | string | null;
+  allowed_mileage?: number | string | null;
+  deposit_amount?: number | string | null;
+  discount_percent?: number | string | null;
 };
 
 type ContractClientRow = {
@@ -118,6 +132,23 @@ function formatMoney(value: number | null | undefined) {
   return `${Math.round(value).toLocaleString("ru-RU")} ₽`;
 }
 
+function parseMoney(value: unknown, fallback: number | null) {
+  if (value === null || value === undefined || value === "") return fallback;
+  const parsed = typeof value === "number" ? value : Number(String(value).replace(",", "."));
+  return Number.isFinite(parsed) && parsed >= 0 ? parsed : fallback;
+}
+
+function parseInteger(value: unknown, fallback: number) {
+  if (value === null || value === undefined || value === "") return fallback;
+  const parsed = typeof value === "number" ? value : Number(value);
+  return Number.isInteger(parsed) && parsed >= 0 ? parsed : fallback;
+}
+
+function parsePercent(value: unknown, fallback: number) {
+  const parsed = parseMoney(value, fallback);
+  return Math.min(Math.max(parsed ?? fallback, 0), 100);
+}
+
 const onesMale = ["", "один", "два", "три", "четыре", "пять", "шесть", "семь", "восемь", "девять"];
 const onesFemale = ["", "одна", "две", "три", "четыре", "пять", "шесть", "семь", "восемь", "девять"];
 const teens = ["десять", "одиннадцать", "двенадцать", "тринадцать", "четырнадцать", "пятнадцать", "шестнадцать", "семнадцать", "восемнадцать", "девятнадцать"];
@@ -186,7 +217,14 @@ function selectDailyPrice(car: ContractCarRow, days: number) {
   return Number.isFinite(price) ? price : null;
 }
 
-async function ensureContractDocument(booking: ContractBookingRow) {
+async function ensureContractDocument(booking: ContractBookingRow, params?: {
+  dailyPrice: number | null;
+  allowedMileage: number;
+  depositAmount: number;
+  discountPercent: number;
+  rentAmount: number | null;
+  totalAmountWithDeposit: number | null;
+}) {
   const existing = await query<RentalContractRow>(
     `SELECT rc.id,
             rc.contract_number,
@@ -210,8 +248,20 @@ async function ensureContractDocument(booking: ContractBookingRow) {
 
   const today = formatPgDate(new Date());
   const result = await query<RentalContractRow>(
-    `INSERT INTO rental_contracts (contract_number, contract_date, booking_id, client_id, car_id)
-     SELECT GREATEST(COALESCE(MAX(contract_number) + 1, 30), 30), $1::date, $2, $3, $4
+    `INSERT INTO rental_contracts (
+       contract_number,
+       contract_date,
+       booking_id,
+       client_id,
+       car_id,
+       daily_price,
+       allowed_mileage,
+       deposit_amount,
+       discount_percent,
+       rent_amount,
+       total_amount_with_deposit
+     )
+     SELECT GREATEST(COALESCE(MAX(contract_number) + 1, 30), 30), $1::date, $2, $3, $4, $5, $6, $7, $8, $9, $10
      FROM rental_contracts
      RETURNING id,
                contract_number,
@@ -224,9 +274,26 @@ async function ensureContractDocument(booking: ContractBookingRow) {
                NULL::text AS car_plate_number,
                NULL::date AS start_date,
                NULL::date AS end_date,
+               daily_price,
+               allowed_mileage,
+               deposit_amount,
+               discount_percent,
+               rent_amount,
+               total_amount_with_deposit,
                created_at,
                deleted_at`,
-    [today, booking.id, booking.client_id, booking.car_id]
+    [
+      today,
+      booking.id,
+      booking.client_id,
+      booking.car_id,
+      params?.dailyPrice ?? null,
+      params?.allowedMileage ?? null,
+      params?.depositAmount ?? null,
+      params?.discountPercent ?? null,
+      params?.rentAmount ?? null,
+      params?.totalAmountWithDeposit ?? null,
+    ]
   );
   await query(
     `UPDATE bookings
@@ -240,6 +307,35 @@ async function ensureContractDocument(booking: ContractBookingRow) {
   return result.rows[0];
 }
 
+async function updateContractDocumentParams(contractId: string, params: {
+  dailyPrice: number | null;
+  allowedMileage: number;
+  depositAmount: number;
+  discountPercent: number;
+  rentAmount: number | null;
+  totalAmountWithDeposit: number | null;
+}) {
+  await query(
+    `UPDATE rental_contracts
+     SET daily_price = $1,
+         allowed_mileage = $2,
+         deposit_amount = $3,
+         discount_percent = $4,
+         rent_amount = $5,
+         total_amount_with_deposit = $6
+     WHERE id = $7`,
+    [
+      params.dailyPrice,
+      params.allowedMileage,
+      params.depositAmount,
+      params.discountPercent,
+      params.rentAmount,
+      params.totalAmountWithDeposit,
+      contractId,
+    ]
+  );
+}
+
 export async function listRentalContracts() {
   const result = await query<RentalContractRow>(
     `SELECT rc.id,
@@ -248,6 +344,12 @@ export async function listRentalContracts() {
             rc.booking_id,
             rc.client_id,
             rc.car_id,
+            rc.daily_price,
+            rc.allowed_mileage,
+            rc.deposit_amount,
+            rc.discount_percent,
+            rc.rent_amount,
+            rc.total_amount_with_deposit,
             COALESCE(NULLIF(CONCAT_WS(' ', cl.last_name, cl.first_name, cl.middle_name), ''), b.client_name) AS client_name,
             c.name AS car_name,
             c.plate_number AS car_plate_number,
@@ -282,7 +384,7 @@ export async function deleteRentalContract(id: string) {
   return (result.rowCount ?? 0) > 0;
 }
 
-export async function generateRentalContract(bookingId: string) {
+async function loadContractBase(bookingId: string) {
   const bookingResult = await query<ContractBookingRow>(
     `SELECT id, car_id, client_id, client_name, client_phone, start_date, start_time, end_date, end_time, contract_number, contract_date
      FROM bookings
@@ -295,13 +397,6 @@ export async function generateRentalContract(bookingId: string) {
     throw new Error("Бронь не найдена");
   }
 
-  const owner = await getOwnerSettings();
-  if (!isOwnerSettingsComplete(owner)) {
-    throw new Error("Не заполнены реквизиты арендодателя");
-  }
-
-  const contractDocument = await ensureContractDocument(booking);
-
   const clientResult = booking.client_id
     ? await query<ContractClientRow>(`SELECT * FROM clients WHERE id = $1 LIMIT 1`, [booking.client_id])
     : { rows: [] as ContractClientRow[] };
@@ -312,6 +407,103 @@ export async function generateRentalContract(bookingId: string) {
   if (!car) {
     throw new Error("Автомобиль не найден");
   }
+
+  const existingContractResult = await query<RentalContractRow>(
+    `SELECT id,
+            contract_number,
+            contract_date,
+            booking_id,
+            client_id,
+            car_id,
+            NULL::text AS client_name,
+            NULL::text AS car_name,
+            NULL::text AS car_plate_number,
+            NULL::date AS start_date,
+            NULL::date AS end_date,
+            daily_price,
+            allowed_mileage,
+            deposit_amount,
+            discount_percent,
+            rent_amount,
+            total_amount_with_deposit,
+            created_at,
+            deleted_at
+     FROM rental_contracts
+     WHERE booking_id = $1 AND deleted_at IS NULL
+     LIMIT 1`,
+    [booking.id]
+  );
+
+  return { booking, client, car, existingContract: existingContractResult.rows[0] ?? null };
+}
+
+function calculateContractParams(args: {
+  rentalDays: number;
+  defaultDailyPrice: number | null;
+  defaultDepositAmount: number;
+  overrides?: RentalContractParams;
+  existingContract?: RentalContractRow | null;
+}) {
+  const dailyPrice = parseMoney(args.overrides?.daily_price, parseMoney(args.existingContract?.daily_price, args.defaultDailyPrice));
+  const allowedMileage = parseInteger(args.overrides?.allowed_mileage, parseInteger(args.existingContract?.allowed_mileage, 250));
+  const depositAmount = parseMoney(args.overrides?.deposit_amount, parseMoney(args.existingContract?.deposit_amount, args.defaultDepositAmount)) ?? args.defaultDepositAmount;
+  const discountPercent = parsePercent(args.overrides?.discount_percent, parsePercent(args.existingContract?.discount_percent, 0));
+  const rentAmountBeforeDiscount = dailyPrice === null ? null : dailyPrice * args.rentalDays;
+  const discountAmount = rentAmountBeforeDiscount === null ? null : Math.round((rentAmountBeforeDiscount * discountPercent) / 100);
+  const rentAmount = rentAmountBeforeDiscount === null ? null : rentAmountBeforeDiscount - (discountAmount ?? 0);
+  const totalAmountWithDeposit = rentAmount === null ? null : rentAmount + depositAmount;
+
+  return {
+    dailyPrice,
+    allowedMileage,
+    depositAmount,
+    discountPercent,
+    rentAmountBeforeDiscount,
+    discountAmount,
+    rentAmount,
+    totalAmountWithDeposit,
+  };
+}
+
+export async function getRentalContractPreview(bookingId: string) {
+  const { booking, client, car, existingContract } = await loadContractBase(bookingId);
+  const rentalDays = daysBetween(formatPgDate(booking.start_date), formatPgDate(booking.end_date));
+  const defaultDailyPrice = selectDailyPrice(car, rentalDays);
+  const defaultDepositAmount = await getDepositAmountForClass(car.car_class);
+  const calculated = calculateContractParams({ rentalDays, defaultDailyPrice, defaultDepositAmount, existingContract });
+  const clientFullName = fullClientName(client, booking.client_name);
+
+  return {
+    contractNumber: existingContract?.contract_number ?? null,
+    client: clientFullName,
+    car: car.plate_number ? `${car.name} · ${car.plate_number}` : car.name,
+    rentalPeriod: `${formatDisplayDate(booking.start_date)} — ${formatDisplayDate(booking.end_date)}`,
+    rentalDays,
+    carClass: dash(car.car_class),
+    dailyPrice: calculated.dailyPrice,
+    allowedMileage: calculated.allowedMileage,
+    depositAmount: calculated.depositAmount,
+    discountPercent: calculated.discountPercent,
+    rentAmountBeforeDiscount: calculated.rentAmountBeforeDiscount,
+    discountAmount: calculated.discountAmount,
+    rentAmount: calculated.rentAmount,
+    totalAmountWithDeposit: calculated.totalAmountWithDeposit,
+  };
+}
+
+export async function generateRentalContract(bookingId: string, overrides?: RentalContractParams) {
+  const owner = await getOwnerSettings();
+  if (!isOwnerSettingsComplete(owner)) {
+    throw new Error("Не заполнены реквизиты арендодателя");
+  }
+
+  const { booking, client, car, existingContract } = await loadContractBase(bookingId);
+  const rentalDays = daysBetween(formatPgDate(booking.start_date), formatPgDate(booking.end_date));
+  const defaultDailyPrice = selectDailyPrice(car, rentalDays);
+  const defaultDepositAmount = await getDepositAmountForClass(car.car_class);
+  const calculated = calculateContractParams({ rentalDays, defaultDailyPrice, defaultDepositAmount, overrides, existingContract });
+  const contractDocument = await ensureContractDocument(booking, calculated);
+  await updateContractDocumentParams(contractDocument.id, calculated);
 
   const { buffer } = await readTemplateFile("rental_contract");
   if (!hasTemplatePlaceholders(buffer)) {
@@ -325,10 +517,6 @@ export async function generateRentalContract(bookingId: string) {
     nullGetter: () => "—",
   });
 
-  const rentalDays = daysBetween(formatPgDate(booking.start_date), formatPgDate(booking.end_date));
-  const dailyPrice = selectDailyPrice(car, rentalDays);
-  const rentAmount = dailyPrice === null ? null : dailyPrice * rentalDays;
-  const depositAmount = car.deposit_amount === null ? null : Number(car.deposit_amount);
   const clientEmail = client?.email?.trim() ?? "";
   const clientFullName = fullClientName(client, booking.client_name);
   const ownerFullName = dash(owner?.full_name);
@@ -379,13 +567,20 @@ export async function generateRentalContract(bookingId: string) {
     rental_period: `${formatDisplayDate(booking.start_date)} — ${formatDisplayDate(booking.end_date)}`,
     rental_term: `${formatDisplayDate(booking.start_date)} — ${formatDisplayDate(booking.end_date)}`,
     rental_days: String(rentalDays),
-    daily_price: formatMoney(dailyPrice),
-    rent_amount: formatMoney(rentAmount),
-    rent_amount_words: rublesToWords(rentAmount),
-    deposit_amount: formatMoney(Number.isFinite(depositAmount) ? depositAmount : null),
-    deposit_amount_words: rublesToWords(Number.isFinite(depositAmount) ? depositAmount : null),
-    allowed_mileage: "—",
-    total_amount: formatMoney(rentAmount),
+    daily_price: formatMoney(calculated.dailyPrice),
+    allowed_mileage: String(calculated.allowedMileage),
+    discount_percent: calculated.discountPercent > 0 ? `${calculated.discountPercent}` : "",
+    discount_line: calculated.discountPercent > 0 ? `Скидка: ${calculated.discountPercent}% / ${formatMoney(calculated.discountAmount)}` : "",
+    rent_amount_before_discount: formatMoney(calculated.rentAmountBeforeDiscount),
+    discount_amount: calculated.discountPercent > 0 ? formatMoney(calculated.discountAmount) : "",
+    discount_amount_words: calculated.discountPercent > 0 ? rublesToWords(calculated.discountAmount) : "",
+    rent_amount: formatMoney(calculated.rentAmount),
+    rent_amount_words: rublesToWords(calculated.rentAmount),
+    deposit_amount: formatMoney(calculated.depositAmount),
+    deposit_amount_words: rublesToWords(calculated.depositAmount),
+    total_amount: formatMoney(calculated.rentAmount),
+    total_amount_with_deposit: formatMoney(calculated.totalAmountWithDeposit),
+    total_amount_with_deposit_words: rublesToWords(calculated.totalAmountWithDeposit),
   };
 
   doc.render(data);

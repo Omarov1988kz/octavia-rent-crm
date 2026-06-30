@@ -260,9 +260,9 @@ function BookingMini({ booking }: { booking: ClientBooking }) {
       <div className="admin-muted">{carLabel(booking)}</div>
       <div>{booking.comment || "—"}</div>
       <div className="admin-actions">
-        <a className="admin-button admin-button-secondary" href={`/api/admin/contracts/rental/${booking.id}`}>
-          Сформировать договор
-        </a>
+        <Link className="admin-button admin-button-secondary" href="/admin/bookings">
+          Открыть в бронированиях
+        </Link>
       </div>
     </div>
   );

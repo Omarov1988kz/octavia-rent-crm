@@ -75,6 +75,30 @@ type QuickClientForm = {
   client_status: ClientStatus;
 };
 
+type ContractPreview = {
+  contractNumber: number | null;
+  client: string;
+  car: string;
+  rentalPeriod: string;
+  rentalDays: number;
+  carClass: string;
+  dailyPrice: number | null;
+  allowedMileage: number;
+  depositAmount: number;
+  discountPercent: number;
+  rentAmountBeforeDiscount: number | null;
+  discountAmount: number | null;
+  rentAmount: number | null;
+  totalAmountWithDeposit: number | null;
+};
+
+type ContractParamsForm = {
+  daily_price: string;
+  allowed_mileage: string;
+  deposit_amount: string;
+  discount_percent: string;
+};
+
 const initialForm: BookingForm = {
   carId: "",
   clientId: "",
@@ -111,6 +135,16 @@ function formatTime(value?: string) {
 
 function formatDateTime(date: string, time?: string) {
   return `${formatDate(date)} ${formatTime(time)}`;
+}
+
+function formatMoney(value: number | null | undefined) {
+  if (value === null || value === undefined || !Number.isFinite(value)) return "—";
+  return `${Math.round(value).toLocaleString("ru-RU")} ₽`;
+}
+
+function parseNumber(value: string) {
+  const parsed = Number(value.replace(",", "."));
+  return Number.isFinite(parsed) ? parsed : 0;
 }
 
 async function parseJson(response: Response) {
@@ -215,6 +249,10 @@ export default function BookingManager({ initialClientId }: { initialClientId?: 
   const [syncLoading, setSyncLoading] = useState(false);
   const [syncMessage, setSyncMessage] = useState<string | null>(null);
   const [filter, setFilter] = useState<FilterKey>("all");
+  const [contractBookingId, setContractBookingId] = useState<string | null>(null);
+  const [contractPreview, setContractPreview] = useState<ContractPreview | null>(null);
+  const [contractForm, setContractForm] = useState<ContractParamsForm>({ daily_price: "", allowed_mileage: "250", deposit_amount: "10000", discount_percent: "0" });
+  const [contractLoading, setContractLoading] = useState(false);
 
   const uniqueCars = useMemo(() => dedupeCars(cars), [cars]);
 
@@ -528,6 +566,88 @@ export default function BookingManager({ initialClientId }: { initialClientId?: 
     }
   }
 
+  async function openContractModal(bookingId: string) {
+    setContractBookingId(bookingId);
+    setContractPreview(null);
+    setContractLoading(true);
+    setError(null);
+    try {
+      const response = await fetch(`/api/admin/contracts/rental/${bookingId}/preview`);
+      const result = await parseJson(response);
+      if (!response.ok) {
+        setError(result?.message || "Ошибка подготовки договора");
+        setContractBookingId(null);
+        return;
+      }
+      const preview = result.preview as ContractPreview;
+      setContractPreview(preview);
+      setContractForm({
+        daily_price: preview.dailyPrice === null ? "" : String(preview.dailyPrice),
+        allowed_mileage: String(preview.allowedMileage ?? 250),
+        deposit_amount: String(preview.depositAmount ?? 10000),
+        discount_percent: String(preview.discountPercent ?? 0),
+      });
+    } catch (previewError) {
+      setError(previewError instanceof Error ? previewError.message : "Ошибка подготовки договора");
+      setContractBookingId(null);
+    } finally {
+      setContractLoading(false);
+    }
+  }
+
+  async function generateContractFromModal() {
+    if (!contractBookingId) return;
+    setContractLoading(true);
+    setError(null);
+    try {
+      const response = await fetch(`/api/admin/contracts/rental/${contractBookingId}`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(contractForm),
+      });
+      if (!response.ok) {
+        const result = await parseJson(response);
+        setError(result?.message || "Ошибка формирования договора");
+        return;
+      }
+      const blob = await response.blob();
+      const disposition = response.headers.get("Content-Disposition") || "";
+      const match = disposition.match(/filename="([^"]+)"/);
+      const fileName = match ? decodeURIComponent(match[1]) : "dogovor-arendy.docx";
+      const url = URL.createObjectURL(blob);
+      const link = document.createElement("a");
+      link.href = url;
+      link.download = fileName;
+      document.body.appendChild(link);
+      link.click();
+      link.remove();
+      URL.revokeObjectURL(url);
+      setContractBookingId(null);
+      setContractPreview(null);
+    } catch (generateError) {
+      setError(generateError instanceof Error ? generateError.message : "Ошибка формирования договора");
+    } finally {
+      setContractLoading(false);
+    }
+  }
+
+  const contractCalculated = useMemo(() => {
+    if (!contractPreview) return null;
+    const dailyPrice = parseNumber(contractForm.daily_price);
+    const rentalDays = contractPreview.rentalDays;
+    const depositAmount = parseNumber(contractForm.deposit_amount);
+    const discountPercent = Math.min(Math.max(parseNumber(contractForm.discount_percent), 0), 100);
+    const rentAmountBeforeDiscount = dailyPrice * rentalDays;
+    const discountAmount = Math.round((rentAmountBeforeDiscount * discountPercent) / 100);
+    const rentAmount = rentAmountBeforeDiscount - discountAmount;
+    return {
+      rentAmountBeforeDiscount,
+      discountAmount,
+      rentAmount,
+      totalAmountWithDeposit: rentAmount + depositAmount,
+    };
+  }, [contractForm, contractPreview]);
+
   return (
     <div className="admin-grid">
       <header className="admin-page-header">
@@ -746,9 +866,9 @@ export default function BookingManager({ initialClientId }: { initialClientId?: 
                     <div className="admin-muted" style={{ marginTop: 6 }}>{formatDateTime(booking.start_date, booking.start_time)} — {formatDateTime(booking.end_date, booking.end_time)}</div>
                   </div>
                   <div className="admin-actions">
-                    <a className="admin-button admin-button-primary" href={`/api/admin/contracts/rental/${booking.id}`}>
+                    <button type="button" className="admin-button admin-button-primary" onClick={() => openContractModal(booking.id)}>
                       Сформировать договор
-                    </a>
+                    </button>
                     <button type="button" className="admin-button admin-button-secondary" onClick={() => startEdit(booking)}>Редактировать</button>
                     {booking.status === "request" ? (
                       <button type="button" className="admin-button admin-button-success" onClick={() => handleConfirm(booking.id)}>Подтвердить бронь</button>
@@ -815,6 +935,68 @@ export default function BookingManager({ initialClientId }: { initialClientId?: 
                 <button type="button" className="admin-button admin-button-secondary" disabled={quickClientLoading} onClick={() => setShowQuickClientModal(false)}>Отмена</button>
               </div>
             </form>
+          </div>
+        </div>
+      ) : null}
+
+      {contractBookingId ? (
+        <div className="admin-modal-backdrop" role="dialog" aria-modal="true" onMouseDown={(event) => {
+          if (event.target === event.currentTarget && !contractLoading) setContractBookingId(null);
+        }}>
+          <div className="admin-modal-panel" style={{ width: "min(900px, 100%)" }}>
+            <div className="admin-modal-header">
+              <div>
+                <h2 className="admin-title" style={{ margin: 0 }}>Параметры договора</h2>
+                <p className="admin-description">Проверьте расчёты перед формированием.</p>
+              </div>
+              <button type="button" className="admin-button admin-button-secondary" disabled={contractLoading} onClick={() => setContractBookingId(null)}>Закрыть</button>
+            </div>
+            <div className="admin-modal-body">
+              {contractLoading && !contractPreview ? <div className="admin-muted">Загрузка...</div> : null}
+              {contractPreview ? (
+                <>
+                  <section className="admin-info-section">
+                    <div className="admin-info-grid">
+                      <div className="admin-info-item"><span>Номер договора</span>{contractPreview.contractNumber ?? "будет присвоен при формировании"}</div>
+                      <div className="admin-info-item"><span>Клиент</span>{contractPreview.client}</div>
+                      <div className="admin-info-item"><span>Автомобиль</span>{contractPreview.car}</div>
+                      <div className="admin-info-item"><span>Период аренды</span>{contractPreview.rentalPeriod}</div>
+                      <div className="admin-info-item"><span>Срок</span>{contractPreview.rentalDays} сут.</div>
+                      <div className="admin-info-item"><span>Класс</span>{contractPreview.carClass}</div>
+                    </div>
+                  </section>
+
+                  <section className="admin-info-section">
+                    <h3 className="admin-info-title">Редактируемые параметры</h3>
+                    <div className="admin-grid-4">
+                      <label className="admin-label">Километраж в сутки<input className="admin-input" type="number" min="0" step="1" value={contractForm.allowed_mileage} onChange={(event) => setContractForm({ ...contractForm, allowed_mileage: event.target.value })} /></label>
+                      <label className="admin-label">Депозит, ₽<input className="admin-input" type="number" min="0" step="1" value={contractForm.deposit_amount} onChange={(event) => setContractForm({ ...contractForm, deposit_amount: event.target.value })} /></label>
+                      <label className="admin-label">Тариф за сутки, ₽<input className="admin-input" type="number" min="0" step="1" value={contractForm.daily_price} onChange={(event) => setContractForm({ ...contractForm, daily_price: event.target.value })} /></label>
+                      <label className="admin-label">Скидка, %<input className="admin-input" type="number" min="0" max="100" step="0.01" value={contractForm.discount_percent} onChange={(event) => setContractForm({ ...contractForm, discount_percent: event.target.value })} /></label>
+                    </div>
+                  </section>
+
+                  <section className="admin-info-section">
+                    <h3 className="admin-info-title">Итог</h3>
+                    <div className="admin-info-grid">
+                      <div className="admin-info-item"><span>Аренда без скидки</span>{formatMoney(contractCalculated?.rentAmountBeforeDiscount)}</div>
+                      <div className="admin-info-item"><span>Скидка</span>{parseNumber(contractForm.discount_percent) > 0 ? `${contractForm.discount_percent}% / ${formatMoney(contractCalculated?.discountAmount)}` : "—"}</div>
+                      <div className="admin-info-item"><span>Сумма аренды</span>{formatMoney(contractCalculated?.rentAmount)}</div>
+                      <div className="admin-info-item"><span>Аренда + депозит</span>{formatMoney(contractCalculated?.totalAmountWithDeposit)}</div>
+                    </div>
+                  </section>
+
+                  <div className="admin-actions">
+                    <button type="button" className="admin-button admin-button-primary" disabled={contractLoading} onClick={generateContractFromModal}>
+                      {contractLoading ? "Формируем..." : "Сформировать договор"}
+                    </button>
+                    <button type="button" className="admin-button admin-button-secondary" disabled={contractLoading} onClick={() => setContractBookingId(null)}>
+                      Отмена
+                    </button>
+                  </div>
+                </>
+              ) : null}
+            </div>
           </div>
         </div>
       ) : null}

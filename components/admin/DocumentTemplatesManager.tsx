@@ -59,12 +59,19 @@ const variables = [
   "rental_term",
   "rental_days",
   "daily_price",
+  "allowed_mileage",
+  "discount_percent",
+  "discount_line",
+  "rent_amount_before_discount",
+  "discount_amount",
+  "discount_amount_words",
   "rent_amount",
   "rent_amount_words",
   "deposit_amount",
   "deposit_amount_words",
-  "allowed_mileage",
   "total_amount",
+  "total_amount_with_deposit",
+  "total_amount_with_deposit_words",
 ];
 
 async function parseJson(response: Response) {
