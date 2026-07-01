@@ -42,6 +42,7 @@ export async function POST() {
   );
 
   const payload = {
+    carKeys: ["octavia"],
     bookings: result.rows.map((booking) => ({
       externalId: booking.id,
       carKey: "octavia",

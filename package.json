@@ -5,7 +5,9 @@
   "scripts": {
     "dev": "next dev",
     "build": "next build",
-    "start": "next start"
+    "start": "next start",
+    "build:local": "next build",
+    "start:local": "next start -p 3002"
   },
   "dependencies": {
     "docxtemplater": "^3.69.0",

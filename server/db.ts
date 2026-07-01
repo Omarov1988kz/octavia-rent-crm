@@ -1,4 +1,4 @@
-import { Pool, type QueryResultRow, types } from "pg";
+import { Pool, type PoolClient, type QueryResultRow, types } from "pg";
 
 types.setTypeParser(1082, (value: string) => value);
 
@@ -21,4 +21,20 @@ function getPool() {
 export async function query<T extends QueryResultRow = QueryResultRow>(text: string, params: unknown[] = []) {
   const result = await getPool().query<T>(text, params);
   return result;
+}
+
+export async function transaction<T>(callback: (client: Pick<PoolClient, "query">) => Promise<T>) {
+  const client = await getPool().connect();
+
+  try {
+    await client.query("BEGIN");
+    const result = await callback(client);
+    await client.query("COMMIT");
+    return result;
+  } catch (error) {
+    await client.query("ROLLBACK");
+    throw error;
+  } finally {
+    client.release();
+  }
 }

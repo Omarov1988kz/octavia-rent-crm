@@ -1,4 +1,4 @@
-import { query } from "@/server/db";
+import { query, transaction } from "@/server/db";
 import { listActiveCars } from "@/server/services/cars";
 
 export type BookingStatus = "request" | "booked" | "cancelled";
@@ -63,6 +63,10 @@ export interface SyncBookingInput {
   endDate: string;
   endTime?: string;
   status: BookingStatus;
+}
+
+export interface SyncPublicBookingsOptions {
+  carKeys?: string[];
 }
 
 function validateDateRange(startDate: string, endDate: string) {
@@ -131,6 +135,10 @@ function sanitizeStatus(value: unknown): BookingStatus {
     return value;
   }
   throw new Error("Неверный статус бронирования");
+}
+
+function normalizeCarKey(value: unknown) {
+  return typeof value === "string" && value.trim() ? value.trim() : null;
 }
 
 export async function listBookings() {
@@ -396,13 +404,13 @@ export async function getBookedDateRanges(carKey?: string) {
   }));
 }
 
-export async function syncPublicBookings(bookings: SyncBookingInput[]) {
+export async function syncPublicBookings(bookings: SyncBookingInput[], options: SyncPublicBookingsOptions = {}) {
   const validated = bookings.map((booking) => {
     if (typeof booking.externalId !== "string" || !booking.externalId.trim()) {
       throw new Error("externalId обязателен");
     }
 
-    const carKey = typeof booking.carKey === "string" && booking.carKey.trim() ? booking.carKey : "octavia";
+    const carKey = normalizeCarKey(booking.carKey) ?? "octavia";
     const status = sanitizeStatus(booking.status);
     const startTime = typeof booking.startTime === "string" && booking.startTime.trim() ? booking.startTime : "12:00";
     const endTime = typeof booking.endTime === "string" && booking.endTime.trim() ? booking.endTime : "12:00";
@@ -420,31 +428,38 @@ export async function syncPublicBookings(bookings: SyncBookingInput[]) {
     };
   });
 
-  for (const entry of validated) {
-    await query(
-      `INSERT INTO public_calendar_entries (external_id, car_key, start_date, start_time, end_date, end_time, status, source, synced_at, created_at, updated_at)
-       VALUES ($1, $2, $3, $4, $5, $6, $7, $8, now(), now(), now())
-       ON CONFLICT (external_id) DO UPDATE
-       SET car_key = EXCLUDED.car_key,
-           start_date = EXCLUDED.start_date,
-           start_time = EXCLUDED.start_time,
-           end_date = EXCLUDED.end_date,
-           end_time = EXCLUDED.end_time,
-           status = EXCLUDED.status,
-           synced_at = now(),
-           updated_at = now()`,
-      [
-        entry.externalId,
-        entry.carKey,
-        entry.startDate,
-        entry.startTime,
-        entry.endDate,
-        entry.endTime,
-        entry.status,
-        "local_crm",
-      ]
-    );
+  const syncedCarKeys = new Set(validated.map((entry) => entry.carKey));
+  for (const carKey of options.carKeys ?? []) {
+    const normalizedCarKey = normalizeCarKey(carKey);
+    if (normalizedCarKey) {
+      syncedCarKeys.add(normalizedCarKey);
+    }
   }
+
+  if (syncedCarKeys.size === 0) {
+    syncedCarKeys.add("octavia");
+  }
+
+  await transaction(async (client) => {
+    await client.query(`DELETE FROM public_calendar_entries WHERE car_key = ANY($1::text[])`, [Array.from(syncedCarKeys)]);
+
+    for (const entry of validated) {
+      await client.query(
+        `INSERT INTO public_calendar_entries (external_id, car_key, start_date, start_time, end_date, end_time, status, source, synced_at, created_at, updated_at)
+         VALUES ($1, $2, $3, $4, $5, $6, $7, $8, now(), now(), now())`,
+        [
+          entry.externalId,
+          entry.carKey,
+          entry.startDate,
+          entry.startTime,
+          entry.endDate,
+          entry.endTime,
+          entry.status,
+          "local_crm",
+        ]
+      );
+    }
+  });
 
   return validated.length;
 }

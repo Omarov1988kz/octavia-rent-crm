@@ -18,9 +18,10 @@ export async function POST(request: Request) {
 
   const body = await request.json();
   const bookings = Array.isArray(body?.bookings) ? body.bookings : [];
+  const carKeys = Array.isArray(body?.carKeys) ? body.carKeys : typeof body?.carKey === "string" ? [body.carKey] : [];
 
   try {
-    const count = await syncPublicBookings(bookings);
+    const count = await syncPublicBookings(bookings, { carKeys });
     return NextResponse.json({ synced: count });
   } catch (error) {
     return NextResponse.json(
